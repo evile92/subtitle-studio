@@ -1,5 +1,25 @@
 # Subtitle Studio — Advanced AI Subtitle Translation & Localization Platform
 
+🌐 **Live Web Application:** [https://subtitle-studio-xi.vercel.app](https://subtitle-studio-xi.vercel.app)
+
+> [!IMPORTANT]
+> ### 🔑 Bring Your Own API Key (BYOK) & Privacy Assurance
+> To use the live online platform, you must provide your own AI provider API Key (**Google Gemini**, **DeepSeek**, **OpenAI**, or **Anthropic Claude**) via the **AI & Settings** panel.
+>
+> 🔒 **100% Privacy & Security Guarantee:**
+> - Your API key is strictly used to communicate with the chosen AI provider and is **never** exposed publicly, leaked in client-side code, logged, or visible to any other user or visitor.
+> - Each user connects with their own private credentials. No third party or platform administrator can view or access your API keys.
+>
+> ---
+>
+> ### 🔒 خصوصية وأمان مفتاح الذكاء الاصطناعي (API Key)
+> لتشغيل واستخدام الترجمة على الرابط المباشر، يلزمك استخدام مفتاح API الخاص بك (**Google Gemini** أو **DeepSeek** أو **OpenAI** أو **Anthropic**) عبر نافذة **إعدادات الذكاء الاصطناعي** في الموقع.
+>
+> 🛡️ **ضمان السرية والأمان التام:**
+> - **مفتاحك آمن 100%:** يُستخدم المفتاح حصرياً لإرسال طلبات الترجمة الخاصة بك مباشرة إلى مزود الذكاء الاصطناعي.
+> - **لا يمكن لأحد رؤيته:** لا يظهر المفتاح لأي زائر أو مستخدم آخر، ولا يتم تسجيله أو مشاركته مع أي طرف ثالث إطلاقاً.
+> - كل مستخدم يعمل ببيئته الخاصة وبمفتاحه الشخصي في سرية تامة.
+
 **Subtitle Studio** is a production-ready full-stack web application built with **Next.js (App Router), TypeScript, React, and Tailwind CSS** for translating movie and TV-series SubRip (`.srt`) subtitle files into virtually any language using advanced large language models, with specialized engineering for **Arabic audiovisual localization**.
 
 ---
@@ -117,8 +137,14 @@ Edit `.env.local` and set your preferred AI provider and API key:
 - **Google Gemini (Default):**
   ```env
   AI_PROVIDER="gemini"
-  AI_MODEL="gemini-2.5-flash"
+  AI_MODEL="gemini-3.1-flash-lite"
   GEMINI_API_KEY="your-gemini-api-key"
+  ```
+- **DeepSeek:**
+  ```env
+  AI_PROVIDER="deepseek"
+  AI_MODEL="deepseek-chat"
+  DEEPSEEK_API_KEY="your-deepseek-api-key"
   ```
 - **OpenAI:**
   ```env
