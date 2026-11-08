@@ -32,7 +32,7 @@ export function SettingsModal({
   const { uiLang, appName, setAppName } = useApp();
 
   const [provider, setProvider] = useState<AIProviderType>('gemini');
-  const [model, setModel] = useState('gemini-3.5-flash-lite');
+  const [model, setModel] = useState('gemini-3.1-flash-lite');
   const [apiKey, setApiKey] = useState('');
   const [customBaseUrl, setCustomBaseUrl] = useState('https://api.openai.com/v1');
   const [temperature, setTemperature] = useState(0.2);
