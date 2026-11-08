@@ -24,6 +24,10 @@ import {
   executeTranslationPipeline,
   regenerateSingleSubtitleEntry,
 } from '@/lib/translation/pipeline';
+import {
+  detectEntriesNeedingProofread,
+  proofreadSubtitleJob,
+} from '@/lib/translation/proofreader';
 import { deleteJob, getJob, saveJob } from '@/lib/storage/job-store';
 import { UI_TRANSLATIONS } from '@/lib/i18n/translations';
 import { SAMPLE_SUBTITLE_FILES } from '@/lib/sample-subtitles';
@@ -170,6 +174,42 @@ class ContextualTestAIAdapter implements AIProviderAdapter {
           ],
           reasoning: 'Refined with deeper dramatic emphasis and masculine addressee agreement.',
         }),
+        provider: this.provider,
+        model: this.model,
+      };
+    }
+
+    // 2b. Second-pass AI Proofreading & Linguistic Review
+    if (
+      request.userPrompt.includes(
+        'SUBTITLE ENTRIES FOR SECOND-PASS PROOFREADING'
+      )
+    ) {
+      const firstBracket = request.userPrompt.indexOf('[');
+      const lastBracket = request.userPrompt.lastIndexOf(']');
+      const items = JSON.parse(
+        request.userPrompt.slice(firstBracket, lastBracket + 1)
+      ) as Array<{
+        sequence: number;
+        originalText: string;
+        currentTranslation: string;
+      }>;
+
+      const corrections = items.map((item) => {
+        let revised = item.currentTranslation
+          .replace(/Syndicate/gi, 'النقابة')
+          .replace(/quickly/gi, 'بسرعة')
+          .replace(/انشاء الله/g, 'إن شاء الله')
+          .replace(/يأخذ مكان/g, 'يحدث');
+        return {
+          sequence: item.sequence,
+          revisedText: revised,
+          reason: 'تعريب الكلمات الإنجليزية المتبقية وتصحيح الإملاء والنحو',
+        };
+      });
+
+      return {
+        content: JSON.stringify({ corrections }),
         provider: this.provider,
         model: this.model,
       };
@@ -642,6 +682,87 @@ I had no other choice.
     // Resume adapter should have been called ONLY for Batch 2 (1 batch call, 0 context analysis calls!)
     assert.equal(resumeAdapter.analysisPromptsReceived.length, 0);
     assert.equal(resumeAdapter.batchPromptsReceived.length, 1);
+
+    deleteJob(jobId);
+  });
+
+  it('Test 9: Second-Pass AI Proofreading — Detects and fixes leftover English words, spelling mistakes, and calques safely', async () => {
+    const sampleSrt = `1
+00:00:01,000 --> 00:00:03,000
+<i>We must escape the Syndicate quickly!</i>
+
+2
+00:00:04,000 --> 00:00:06,500
+Everything will take place tomorrow, God willing.
+
+3
+00:00:07,000 --> 00:00:09,000
+Wait for me at the gate.
+`;
+    const parsed = parseSrtContent(sampleSrt, 'proofread_test.srt');
+    // Simulate a first-pass translation that left English words ("Syndicate", "quickly") and a spelling/calque error ("يأخذ مكان", "انشاء الله")
+    parsed.entries[0].translatedText = '<i>علينا الهروب من Syndicate quickly!</i>';
+    parsed.entries[0].aiTranslatedText = parsed.entries[0].translatedText;
+    parsed.entries[1].translatedText = 'كل شيء سوف يأخذ مكان غداً انشاء الله.';
+    parsed.entries[1].aiTranslatedText = parsed.entries[1].translatedText;
+    parsed.entries[2].translatedText = 'انتظرني عند البوابة.';
+    parsed.entries[2].aiTranslatedText = parsed.entries[2].translatedText;
+
+    // 1. Verify smart detector finds entries #1 and #2 (while ignoring valid <i> tags and leaving clean entry #3 alone)
+    const detected = detectEntriesNeedingProofread(parsed.entries, 'ar');
+    assert.deepEqual(detected.sequences, [1, 2]);
+
+    const jobId = `test_proofread_${Date.now()}`;
+    const job: TranslationJob = {
+      id: jobId,
+      fileName: 'proofread_test.srt',
+      fileSize: sampleSrt.length,
+      format: 'srt',
+      sourceLanguage: 'en',
+      detectedSourceLanguage: 'en',
+      targetLanguage: 'ar',
+      arabicDialect: 'msa',
+      preferences: DEFAULT_PREFS,
+      stage: 'completed',
+      progressPercent: 100,
+      translatedCount: 3,
+      totalEntries: 3,
+      currentBatch: 1,
+      totalBatches: 1,
+      entries: parsed.entries,
+      glossary: [],
+      batches: [],
+      logs: [],
+      warnings: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    saveJob(job);
+
+    const adapter = new ContextualTestAIAdapter();
+    const result = await proofreadSubtitleJob({
+      jobId,
+      scope: 'smart',
+      customAdapter: adapter,
+    });
+
+    assert.equal(result.summary.reviewedCount, 2);
+    assert.equal(result.summary.correctedCount, 2);
+    assert.equal(result.summary.remainingEnglishCount, 0);
+
+    const updatedEntries = result.job.entries;
+    assert.equal(
+      stripBidiControlChars(updatedEntries[0].translatedText!),
+      '<i>علينا الهروب من النقابة بسرعة!</i>'
+    );
+    assert.equal(
+      stripBidiControlChars(updatedEntries[1].translatedText!),
+      'كل شيء سوف يحدث غداً إن شاء الله.'
+    );
+    assert.equal(
+      stripBidiControlChars(updatedEntries[2].translatedText!),
+      'انتظرني عند البوابة.'
+    );
 
     deleteJob(jobId);
   });

@@ -29,6 +29,7 @@ import {
   getLanguageName,
   isRtlLanguage,
 } from '@/lib/languages';
+import type { ProofreadResultSummary } from '@/lib/translation/proofreader';
 import { SubtitlePreview } from './SubtitlePreview';
 import { ContextProfileView } from './ContextProfileView';
 import { ValidationReportView } from './ValidationReportView';
@@ -72,6 +73,13 @@ export function SubtitleWorkspace({
 
   // Export dropdown state
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+
+  // Second-pass AI Proofread & Linguistic Fix state
+  const [isProofreading, setIsProofreading] = useState(false);
+  const [proofreadMenuOpen, setProofreadMenuOpen] = useState(false);
+  const [proofreadSummary, setProofreadSummary] =
+    useState<ProofreadResultSummary | null>(null);
+  const [showProofreadDetails, setShowProofreadDetails] = useState(true);
 
   const isTargetRtl = isRtlLanguage(job.targetLanguage);
   const isSourceRtl = isRtlLanguage(
@@ -278,6 +286,37 @@ export function SubtitleWorkspace({
     }
   };
 
+  const handleRunProofread = async (scope: 'smart' | 'all' = 'smart') => {
+    setProofreadMenuOpen(false);
+    setIsProofreading(true);
+    setRegenError(null);
+    try {
+      const res = await fetch(`/api/jobs/${job.id}/proofread`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setRegenError(data.error || 'Failed to run AI proofreading.');
+        return;
+      }
+      if (data.job) {
+        onJobUpdated(data.job);
+      }
+      if (data.summary) {
+        setProofreadSummary(data.summary);
+        setShowProofreadDetails(true);
+      }
+    } catch (err) {
+      setRegenError(
+        err instanceof Error ? err.message : 'Failed to run AI proofreading.'
+      );
+    } finally {
+      setIsProofreading(false);
+    }
+  };
+
   const triggerDownload = (options: { bom?: boolean; bilingual?: boolean } = {}) => {
     const params = new URLSearchParams();
     if (options.bom) params.set('bom', 'true');
@@ -367,6 +406,59 @@ export function SubtitleWorkspace({
               {t.workspace.entryActions.saved}
             </span>
           )}
+
+          {/* Second-Pass AI Proofread & Linguistic Fix Dropdown Button */}
+          <div className="relative">
+            <div className="inline-flex rounded-xl shadow-xs">
+              <button
+                type="button"
+                disabled={isProofreading}
+                onClick={() => handleRunProofread('smart')}
+                className="px-3.5 py-2.5 rounded-s-xl text-xs sm:text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white flex items-center gap-1.5 transition-colors"
+              >
+                {isProofreading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+                <span>
+                  {isProofreading
+                    ? t.workspace.proofread.running
+                    : t.workspace.proofread.button}
+                </span>
+              </button>
+              <button
+                type="button"
+                disabled={isProofreading}
+                onClick={() => setProofreadMenuOpen(!proofreadMenuOpen)}
+                className="px-2 py-2.5 rounded-e-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 text-white border-s border-emerald-500 transition-colors"
+                aria-label="Proofread options"
+              >
+                <ChevronDown className="w-4 h-4" />
+              </button>
+            </div>
+
+            {proofreadMenuOpen && (
+              <div className="absolute end-0 mt-2 w-72 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl p-1.5 z-30 space-y-1">
+                <button
+                  type="button"
+                  onClick={() => handleRunProofread('smart')}
+                  className="w-full text-start px-3 py-2 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                  <span>{t.workspace.proofread.smartMode}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRunProofread('all')}
+                  className="w-full text-start px-3 py-2 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2"
+                >
+                  <Wand2 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                  <span>{t.workspace.proofread.fullMode}</span>
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Export Dropdown Button */}
           <div className="relative">
@@ -497,8 +589,134 @@ export function SubtitleWorkspace({
             onClick={() => setRegenError(null)}
             className="font-bold underline"
           >
-            Dismiss
+            {uiLang === 'ar' ? 'إغلاق' : 'Dismiss'}
           </button>
+        </div>
+      )}
+
+      {/* Second-Pass AI Proofreading Results Banner */}
+      {proofreadSummary && (
+        <div className="rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/80 p-4 space-y-3 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                <Sparkles className="w-4 h-4" />
+              </span>
+              <div>
+                <h3 className="text-xs sm:text-sm font-bold text-emerald-950 dark:text-emerald-200">
+                  {t.workspace.proofread.reportTitle}
+                </h3>
+                <p className="text-xs text-emerald-800 dark:text-emerald-300 mt-0.5">
+                  {t.workspace.proofread.reviewedLabel}:{' '}
+                  <strong>{proofreadSummary.reviewedCount}</strong> •{' '}
+                  {t.workspace.proofread.correctedLabel}:{' '}
+                  <strong>{proofreadSummary.correctedCount}</strong>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {proofreadSummary.changes.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowProofreadDetails(!showProofreadDetails)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100/50"
+                >
+                  {showProofreadDetails
+                    ? t.workspace.proofread.hideChanges
+                    : `${t.workspace.proofread.showChanges} (${proofreadSummary.changes.length})`}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setProofreadSummary(null)}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/60 dark:hover:bg-emerald-900/40"
+              >
+                {uiLang === 'ar' ? 'إغلاق' : 'Dismiss'}
+              </button>
+            </div>
+          </div>
+
+          {proofreadSummary.changes.length === 0 ? (
+            <p className="text-xs text-emerald-800 dark:text-emerald-300">
+              {t.workspace.proofread.noIssuesFound}
+            </p>
+          ) : (
+            showProofreadDetails && (
+              <div className="max-h-72 overflow-y-auto space-y-2 pt-2 border-t border-emerald-200/70 dark:border-emerald-800/60">
+                {proofreadSummary.changes.map((chg) => {
+                  const matchingEntry = job.entries.find(
+                    (e) => e.sequence === chg.sequence
+                  );
+                  return (
+                    <div
+                      key={chg.sequence}
+                      className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200/80 dark:border-slate-800 text-xs space-y-1.5"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
+                            {chg.reason}
+                          </span>
+                          {matchingEntry && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                persistEntryUpdates([
+                                  {
+                                    sequence: chg.sequence,
+                                    translatedText: chg.previousTranslation,
+                                    isEditedByUser: false,
+                                  },
+                                ])
+                              }
+                              className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 hover:text-indigo-600"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              <span>{t.workspace.proofread.undoChange}</span>
+                            </button>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleJumpToSequence(chg.sequence)}
+                          className="font-mono font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+                        >
+                          <bdi dir="ltr">#{chg.sequence}</bdi>
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">
+                        <div className="p-2 rounded-lg bg-rose-50/60 dark:bg-rose-950/25 border border-rose-200/60 dark:border-rose-900/50">
+                          <span className="block text-[10px] font-bold text-rose-600 dark:text-rose-400 mb-0.5">
+                            {t.workspace.proofread.beforeLabel}:
+                          </span>
+                          <p
+                            dir={isTargetRtl ? 'rtl' : 'ltr'}
+                            className="text-slate-700 dark:text-slate-300 line-through opacity-80"
+                          >
+                            {chg.previousTranslation}
+                          </p>
+                        </div>
+                        <div className="p-2 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-900/50">
+                          <span className="block text-[10px] font-bold text-emerald-700 dark:text-emerald-400 mb-0.5">
+                            {t.workspace.proofread.afterLabel}:
+                          </span>
+                          <p
+                            dir={isTargetRtl ? 'rtl' : 'ltr'}
+                            className="font-semibold text-slate-900 dark:text-white"
+                          >
+                            {chg.revisedTranslation}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          )}
         </div>
       )}
 

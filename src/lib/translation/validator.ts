@@ -237,11 +237,13 @@ export function validateAndRepairTranslations(
         }
       }
 
-      // Check #10: Obvious language / punctuation or JSON artifact check
-      if (isArabicTarget) {
+      // Check #10: Obvious language / punctuation or leftover English word check
+      if (isArabicTarget && !orig.isSoundEffect) {
         const arabicChars = (cleanTrans.match(/[\u0600-\u06FF]/g) || []).length;
         const latinChars = (cleanTrans.match(/[A-Za-z]/g) || []).length;
-        if (arabicChars === 0 && latinChars > 4 && !orig.isSoundEffect) {
+        const leftoverLatinWords = cleanTrans.match(/[A-Za-z]{2,}/g) || [];
+
+        if (arabicChars === 0 && latinChars > 4) {
           entryWarnings.push('Contains no Arabic script characters');
           issues.push({
             id: `lang-${orig.sequence}-${issues.length + 1}`,
@@ -249,6 +251,16 @@ export function validateAndRepairTranslations(
             type: 'language_or_punctuation_issue',
             severity: 'warning',
             message: `Subtitle #${orig.sequence}: Target language is Arabic, but the translated line contains no Arabic characters.`,
+            autoRepaired: false,
+          });
+        } else if (arabicChars > 0 && leftoverLatinWords.length > 0) {
+          entryWarnings.push(`Leftover English: ${leftoverLatinWords.slice(0, 3).join(', ')}`);
+          issues.push({
+            id: `latin-${orig.sequence}-${issues.length + 1}`,
+            sequence: orig.sequence,
+            type: 'language_or_punctuation_issue',
+            severity: 'warning',
+            message: `Subtitle #${orig.sequence}: Contains untranslated English/Latin text (${leftoverLatinWords.slice(0, 3).join(', ')}) inside Arabic translation.`,
             autoRepaired: false,
           });
         }

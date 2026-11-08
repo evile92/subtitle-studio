@@ -103,7 +103,13 @@ export default function HomePage() {
       const savedJobId = localStorage.getItem('subtitle_studio_active_job_id');
       if (savedJobId) {
         fetch(`/api/jobs/${savedJobId}`)
-          .then((r) => (r.ok ? r.json() : null))
+          .then((r) => {
+            if (r.status === 404) {
+              localStorage.removeItem('subtitle_studio_active_job_id');
+              return null;
+            }
+            return r.ok ? r.json() : null;
+          })
           .then((data) => {
             if (data?.job) {
               setActiveJob(data.job);
@@ -242,6 +248,13 @@ export default function HomePage() {
 
   const handleDeleteJob = async (jobId: string) => {
     await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' });
+    try {
+      if (localStorage.getItem('subtitle_studio_active_job_id') === jobId) {
+        localStorage.removeItem('subtitle_studio_active_job_id');
+      }
+    } catch {
+      // Ignore
+    }
     if (activeJob?.id === jobId) {
       setActiveJob(null);
       setActiveView('dashboard');
