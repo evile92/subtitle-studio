@@ -30,7 +30,13 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const validProviders: AIProviderType[] = ['gemini', 'openai', 'anthropic', 'custom'];
+    const validProviders: AIProviderType[] = [
+      'gemini',
+      'deepseek',
+      'openai',
+      'anthropic',
+      'custom',
+    ];
     const provider = validProviders.includes(body.provider) ? body.provider : undefined;
 
     saveRuntimeAIConfig({

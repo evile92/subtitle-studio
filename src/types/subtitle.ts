@@ -216,7 +216,7 @@ export interface JobSummary {
   completedAt?: string;
 }
 
-export type AIProviderType = 'gemini' | 'openai' | 'anthropic' | 'custom';
+export type AIProviderType = 'gemini' | 'openai' | 'anthropic' | 'deepseek' | 'custom';
 
 export interface AIProviderSettings {
   provider: AIProviderType;

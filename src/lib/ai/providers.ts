@@ -17,6 +17,7 @@ export const DEFAULT_MODELS: Record<AIProviderType, string[]> = {
     'gemini-2.5-flash',
     'gemini-2.5-pro',
   ],
+  deepseek: ['deepseek-chat', 'deepseek-reasoner'],
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini'],
   anthropic: ['claude-3-5-sonnet-latest', 'claude-3-7-sonnet-latest', 'claude-3-5-haiku-latest'],
   custom: ['deepseek-chat', 'llama-3.3-70b-versatile', 'qwen-2.5-72b-instruct'],
@@ -99,6 +100,7 @@ export function resolveAIConfig(): {
 
   let envKey = '';
   if (provider === 'gemini') envKey = process.env.GEMINI_API_KEY || '';
+  else if (provider === 'deepseek') envKey = process.env.DEEPSEEK_API_KEY || '';
   else if (provider === 'openai') envKey = process.env.OPENAI_API_KEY || '';
   else if (provider === 'anthropic') envKey = process.env.ANTHROPIC_API_KEY || '';
   else if (provider === 'custom') envKey = process.env.CUSTOM_AI_API_KEY || process.env.OPENAI_API_KEY || '';
@@ -134,11 +136,13 @@ export function getPublicAIConfigState(): ServerAIConfigState {
   const envVarName =
     resolved.provider === 'gemini'
       ? 'GEMINI_API_KEY'
-      : resolved.provider === 'openai'
-        ? 'OPENAI_API_KEY'
-        : resolved.provider === 'anthropic'
-          ? 'ANTHROPIC_API_KEY'
-          : 'CUSTOM_AI_API_KEY';
+      : resolved.provider === 'deepseek'
+        ? 'DEEPSEEK_API_KEY'
+        : resolved.provider === 'openai'
+          ? 'OPENAI_API_KEY'
+          : resolved.provider === 'anthropic'
+            ? 'ANTHROPIC_API_KEY'
+            : 'CUSTOM_AI_API_KEY';
 
   const missingConfigMessage = isConfigured
     ? undefined
@@ -273,11 +277,13 @@ export class ConfigurableAIProviderAdapter implements AIProviderAdapter {
     const envVar =
       this.provider === 'gemini'
         ? 'GEMINI_API_KEY'
-        : this.provider === 'openai'
-          ? 'OPENAI_API_KEY'
-          : this.provider === 'anthropic'
-            ? 'ANTHROPIC_API_KEY'
-            : 'CUSTOM_AI_API_KEY';
+        : this.provider === 'deepseek'
+          ? 'DEEPSEEK_API_KEY'
+          : this.provider === 'openai'
+            ? 'OPENAI_API_KEY'
+            : this.provider === 'anthropic'
+              ? 'ANTHROPIC_API_KEY'
+              : 'CUSTOM_AI_API_KEY';
 
     return `Missing API key for provider "${this.provider}". Set ${envVar} in your environment (.env.local) or configure it in the Platform Settings panel.`;
   }
@@ -295,11 +301,13 @@ export class ConfigurableAIProviderAdapter implements AIProviderAdapter {
     if (this.provider === 'anthropic') {
       return this.callAnthropic(request, temperature);
     }
-    // OpenAI or Custom OpenAI-compatible
+    // DeepSeek, OpenAI, or Custom OpenAI-compatible
     const baseUrl =
-      this.provider === 'openai'
-        ? 'https://api.openai.com/v1'
-        : this.customBaseUrl.replace(/\/+$/, '');
+      this.provider === 'deepseek'
+        ? (this.customBaseUrl && this.customBaseUrl.includes('deepseek') ? this.customBaseUrl.replace(/\/+$/, '') : 'https://api.deepseek.com')
+        : this.provider === 'openai'
+          ? 'https://api.openai.com/v1'
+          : this.customBaseUrl.replace(/\/+$/, '');
     return this.callOpenAICompatible(baseUrl, request, temperature);
   }
 
@@ -423,7 +431,7 @@ export class ConfigurableAIProviderAdapter implements AIProviderAdapter {
         { role: 'system', content: request.systemPrompt },
         { role: 'user', content: request.userPrompt },
       ],
-      ...(request.jsonMode && this.provider === 'openai'
+      ...(request.jsonMode && (this.provider === 'openai' || (this.provider === 'deepseek' && this.model === 'deepseek-chat'))
         ? { response_format: { type: 'json_object' } }
         : {}),
     };

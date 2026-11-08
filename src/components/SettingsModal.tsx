@@ -187,10 +187,11 @@ export function SettingsModal({
               <Cpu className="w-3.5 h-3.5 text-indigo-500" />
               <span>{uiLang === 'ar' ? 'مزود الذكاء الاصطناعي' : 'AI Model Provider'}</span>
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
               {(
                 [
                   { id: 'gemini', label: 'Google Gemini' },
+                  { id: 'deepseek', label: 'DeepSeek' },
                   { id: 'openai', label: 'OpenAI' },
                   { id: 'anthropic', label: 'Anthropic Claude' },
                   { id: 'custom', label: 'Custom / Local' },
@@ -206,7 +207,7 @@ export function SettingsModal({
                       : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400'
                   }`}
                 >
-                  {p.label}
+                  {p.id === 'deepseek' && uiLang === 'ar' ? 'DeepSeek (ديب سيك)' : p.label}
                 </button>
               ))}
             </div>
@@ -221,7 +222,7 @@ export function SettingsModal({
               type="text"
               value={model}
               onChange={(e) => setModel(e.target.value)}
-              placeholder="e.g. gemini-2.5-flash or gpt-4o"
+              placeholder="e.g. gemini-3.1-flash-lite, deepseek-chat, or gpt-4o"
               className="w-full px-3.5 py-2 rounded-xl text-xs sm:text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
             />
             {suggestedModels.length > 0 && (
