@@ -4,6 +4,7 @@ import {
   ArabicDialect,
   TranslationJob,
   TranslationPreferencesConfig,
+  UserClientAIConfig,
 } from '@/types/subtitle';
 import { parseSrtContent } from '@/lib/srt/parser';
 import { createContextualBatches } from '@/lib/translation/chunker';
@@ -48,6 +49,7 @@ export async function POST(req: NextRequest) {
       targetLanguage = 'ar',
       arabicDialect = 'msa',
       preferences = {},
+      userAIConfig,
     } = body as {
       fileName?: string;
       fileContent?: string;
@@ -55,6 +57,7 @@ export async function POST(req: NextRequest) {
       targetLanguage?: string;
       arabicDialect?: ArabicDialect;
       preferences?: Partial<TranslationPreferencesConfig>;
+      userAIConfig?: UserClientAIConfig;
     };
 
     if (!fileContent || typeof fileContent !== 'string') {
@@ -133,6 +136,7 @@ export async function POST(req: NextRequest) {
         },
       ],
       warnings: [...parsed.warnings],
+      userAIConfig,
       createdAt: now,
       updatedAt: now,
     };

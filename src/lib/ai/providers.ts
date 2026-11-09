@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { z } from 'zod';
-import type { AIProviderType } from '@/types/subtitle';
+import type { AIProviderType, UserClientAIConfig } from '@/types/subtitle';
 import type {
   AIGenerateRequest,
   AIGenerateResponse,
@@ -17,7 +17,7 @@ export const DEFAULT_MODELS: Record<AIProviderType, string[]> = {
     'gemini-2.5-flash',
     'gemini-2.5-pro',
   ],
-  deepseek: ['deepseek-chat', 'deepseek-reasoner'],
+  deepseek: ['deepseek-flash', 'deepseek-chat', 'deepseek-reasoner'],
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini'],
   anthropic: ['claude-3-5-sonnet-latest', 'claude-3-7-sonnet-latest', 'claude-3-5-haiku-latest'],
   custom: ['deepseek-chat', 'llama-3.3-70b-versatile', 'qwen-2.5-72b-instruct'],
@@ -33,17 +33,26 @@ interface PersistedRuntimeConfig {
 }
 
 const CONFIG_FILE_PATH = path.join(process.cwd(), 'data', 'config', 'ai-settings.json');
+let runtimeMemoryConfig: PersistedRuntimeConfig = {};
 
 function readRuntimeConfig(): PersistedRuntimeConfig {
+  let diskConfig: PersistedRuntimeConfig = {};
   try {
     if (fs.existsSync(CONFIG_FILE_PATH)) {
       const raw = fs.readFileSync(CONFIG_FILE_PATH, 'utf8');
-      return JSON.parse(raw) as PersistedRuntimeConfig;
+      diskConfig = JSON.parse(raw) as PersistedRuntimeConfig;
     }
   } catch {
-    // Ignore read error and return empty runtime config
+    // Ignore read error on serverless / read-only filesystem
   }
-  return {};
+  return {
+    ...diskConfig,
+    ...runtimeMemoryConfig,
+    apiKeys: {
+      ...(diskConfig.apiKeys || {}),
+      ...(runtimeMemoryConfig.apiKeys || {}),
+    },
+  };
 }
 
 export function saveRuntimeAIConfig(update: Partial<PersistedRuntimeConfig> & { apiKey?: string }): void {
@@ -63,11 +72,17 @@ export function saveRuntimeAIConfig(update: Partial<PersistedRuntimeConfig> & { 
     apiKeys,
   };
 
-  const dir = path.dirname(CONFIG_FILE_PATH);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  runtimeMemoryConfig = merged;
+
+  try {
+    const dir = path.dirname(CONFIG_FILE_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(merged, null, 2), 'utf8');
+  } catch {
+    // Gracefully handle read-only environments on serverless hosts (e.g. Vercel)
   }
-  fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(merged, null, 2), 'utf8');
 }
 
 function maskKey(key?: string): string | undefined {
@@ -431,7 +446,10 @@ export class ConfigurableAIProviderAdapter implements AIProviderAdapter {
         { role: 'system', content: request.systemPrompt },
         { role: 'user', content: request.userPrompt },
       ],
-      ...(request.jsonMode && (this.provider === 'openai' || (this.provider === 'deepseek' && this.model === 'deepseek-chat'))
+      ...(request.jsonMode &&
+      (this.provider === 'openai' ||
+        (this.provider === 'deepseek' &&
+          (this.model.includes('chat') || this.model.includes('flash'))))
         ? { response_format: { type: 'json_object' } }
         : {}),
     };
@@ -521,5 +539,21 @@ export function setAIProviderAdapterOverride(adapter: AIProviderAdapter | null):
 
 export function getAIProviderAdapter(): AIProviderAdapter {
   if (activeAdapterOverride) return activeAdapterOverride;
+  return new ConfigurableAIProviderAdapter();
+}
+
+export function createAdapterFromUserConfig(
+  userConfig?: Partial<UserClientAIConfig>
+): ConfigurableAIProviderAdapter {
+  if (userConfig && userConfig.provider && userConfig.apiKey) {
+    return new ConfigurableAIProviderAdapter({
+      provider: userConfig.provider,
+      model: userConfig.model,
+      apiKey: userConfig.apiKey,
+      customBaseUrl: userConfig.customBaseUrl,
+      temperature: userConfig.temperature,
+      maxRetries: userConfig.maxRetries,
+    });
+  }
   return new ConfigurableAIProviderAdapter();
 }

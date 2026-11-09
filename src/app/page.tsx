@@ -19,6 +19,11 @@ import {
   TranslationPreferencesConfig,
 } from '@/types/subtitle';
 import { ServerAIConfigState } from '@/lib/ai/types';
+import {
+  applyUserConfigToAIState,
+  getActiveUserClientAIConfig,
+  loadStoredUserConfig,
+} from '@/lib/storage/client-config';
 import { Navbar } from '@/components/Navbar';
 import { UploadedFileState, UploadZone } from '@/components/UploadZone';
 import { LanguageSelectors } from '@/components/LanguageSelectors';
@@ -73,12 +78,12 @@ export default function HomePage() {
   const fetchAIConfig = useCallback(async () => {
     try {
       const res = await fetch('/api/config');
-      if (res.ok) {
-        const data = await res.json();
-        setAiConfig(data);
-      }
+      const data = res.ok ? await res.json() : null;
+      const merged = applyUserConfigToAIState(data, loadStoredUserConfig());
+      setAiConfig(merged);
     } catch {
-      // Ignore network error on init
+      const fallback = applyUserConfigToAIState(null, loadStoredUserConfig());
+      setAiConfig(fallback);
     }
   }, []);
 
@@ -155,6 +160,8 @@ export default function HomePage() {
     setStartError(null);
 
     try {
+      const userAIConfig = getActiveUserClientAIConfig();
+
       // 1. Create the job on the server
       const createRes = await fetch('/api/jobs', {
         method: 'POST',
@@ -166,6 +173,7 @@ export default function HomePage() {
           targetLanguage,
           arabicDialect: targetLanguage === 'ar' ? arabicDialect : undefined,
           preferences,
+          userAIConfig,
         }),
       });
 
@@ -190,7 +198,7 @@ export default function HomePage() {
       const procRes = await fetch(`/api/jobs/${createdJob.id}/process`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ async: true }),
+        body: JSON.stringify({ async: true, userAIConfig }),
       });
 
       if (!procRes.ok) {
@@ -221,10 +229,11 @@ export default function HomePage() {
         setActiveView('progress');
         setIsProcessingJob(true);
 
+        const userAIConfig = getActiveUserClientAIConfig();
         await fetch(`/api/jobs/${jobId}/process`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ async: true }),
+          body: JSON.stringify({ async: true, userAIConfig }),
         });
       }
     }

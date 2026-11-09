@@ -58,13 +58,13 @@ export function PrivacyModal({ isOpen, onClose }: PrivacyModalProps) {
             <div>
               <p className="font-bold text-slate-900 dark:text-white">
                 {uiLang === 'ar'
-                  ? 'حماية مفاتيح API ونقاط النهاية'
-                  : 'API Key Isolation & Endpoint Protection'}
+                  ? 'حماية مفاتيح API ونظام الاستخدام الشخصي (BYOK)'
+                  : 'Private BYOK (Bring Your Own Key) Protection'}
               </p>
               <p className="mt-0.5">
                 {uiLang === 'ar'
-                  ? 'تُحفظ مفاتيح API في متغيرات البيئة على الخادم فقط ولا يتم إرسالها أو كشفها في كود الواجهة الأمامية للمتصفح. جميع طلبات الخادم محمية بآلية تحديد معدل الطلبات (Rate Limiting) وفحص صارم لمحتوى الملفات.'
-                  : 'AI provider API keys reside exclusively on the server and are never exposed in frontend code or network payloads. All API endpoints enforce rate limiting, extension verification, binary rejection, and size limits.'}
+                  ? 'تُحفظ مفاتيح API في متصفحك الشخصي فقط، وتُرسل بشكل مؤقت في الذاكرة لتنفيذ طلبات ترجمتك الشخصية دون تخزينها على الخادم أو مشاركتها مع أي شخص آخر، مما يحمي رصيدك ويضمن خصوصيتك الكاملة.'
+                  : 'API keys are stored safely in your own browser (localStorage) and passed transiently in memory solely to process your translation jobs. Keys are never logged or stored on the server, guaranteeing personal billing isolation and privacy.'}
               </p>
             </div>
           </div>

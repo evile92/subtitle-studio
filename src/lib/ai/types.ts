@@ -38,7 +38,7 @@ export interface ServerAIConfigState {
   maxRetries: number;
   customBaseUrl?: string;
   isConfigured: boolean;
-  configuredSource: 'env' | 'runtime' | 'none';
+  configuredSource: 'env' | 'runtime' | 'client-browser' | 'none';
   maskedKey?: string;
   missingConfigMessage?: string;
   availableModels: Record<AIProviderType, string[]>;

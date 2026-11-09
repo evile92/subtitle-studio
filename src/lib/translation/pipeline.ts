@@ -4,7 +4,7 @@ import type {
   TranslationJob,
 } from '@/types/subtitle';
 import type { AIProviderAdapter } from '@/lib/ai/types';
-import { getAIProviderAdapter } from '@/lib/ai/providers';
+import { createAdapterFromUserConfig, getAIProviderAdapter } from '@/lib/ai/providers';
 import { appendJobLog, getJob, saveJob } from '@/lib/storage/job-store';
 import {
   analyzeFullSubtitleContext,
@@ -132,7 +132,11 @@ export async function executeTranslationPipeline(
     throw new Error(`Translation job "${jobId}" not found.`);
   }
 
-  const aiAdapter = customAdapter || getAIProviderAdapter();
+  const aiAdapter =
+    customAdapter ||
+    (job.userAIConfig?.apiKey
+      ? createAdapterFromUserConfig(job.userAIConfig)
+      : getAIProviderAdapter());
   if (!aiAdapter.isConfigured()) {
     const msg = aiAdapter.getMissingConfigMessage();
     job.stage = 'failed';
@@ -538,7 +542,11 @@ export async function regenerateSingleSubtitleEntry(params: {
     throw new Error(`Job "${jobId}" not found.`);
   }
 
-  const aiAdapter = customAdapter || getAIProviderAdapter();
+  const aiAdapter =
+    customAdapter ||
+    (job.userAIConfig?.apiKey
+      ? createAdapterFromUserConfig(job.userAIConfig)
+      : getAIProviderAdapter());
   if (!aiAdapter.isConfigured()) {
     throw new Error(aiAdapter.getMissingConfigMessage());
   }

@@ -33,6 +33,7 @@ import type { ProofreadResultSummary } from '@/lib/translation/proofreader';
 import { SubtitlePreview } from './SubtitlePreview';
 import { ContextProfileView } from './ContextProfileView';
 import { ValidationReportView } from './ValidationReportView';
+import { getActiveUserClientAIConfig } from '@/lib/storage/client-config';
 
 interface SubtitleWorkspaceProps {
   job: TranslationJob;
@@ -236,12 +237,14 @@ export function SubtitleWorkspace({
     setRegeneratingSeq(sequence);
     setRegenError(null);
     try {
+      const userAIConfig = getActiveUserClientAIConfig();
       const res = await fetch(`/api/jobs/${job.id}/regenerate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sequence,
           customInstruction: instruction,
+          userAIConfig,
         }),
       });
       const data = await res.json();
@@ -291,10 +294,11 @@ export function SubtitleWorkspace({
     setIsProofreading(true);
     setRegenError(null);
     try {
+      const userAIConfig = getActiveUserClientAIConfig();
       const res = await fetch(`/api/jobs/${job.id}/proofread`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scope }),
+        body: JSON.stringify({ scope, userAIConfig }),
       });
       const data = await res.json();
       if (!res.ok) {

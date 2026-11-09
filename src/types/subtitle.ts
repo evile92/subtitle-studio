@@ -193,6 +193,7 @@ export interface TranslationJob {
   errorMessage?: string;
   aiProviderUsed?: string;
   aiModelUsed?: string;
+  userAIConfig?: UserClientAIConfig;
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
@@ -217,6 +218,15 @@ export interface JobSummary {
 }
 
 export type AIProviderType = 'gemini' | 'openai' | 'anthropic' | 'deepseek' | 'custom';
+
+export interface UserClientAIConfig {
+  provider: AIProviderType;
+  model: string;
+  apiKey?: string;
+  customBaseUrl?: string;
+  temperature?: number;
+  maxRetries?: number;
+}
 
 export interface AIProviderSettings {
   provider: AIProviderType;

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getJob } from '@/lib/storage/job-store';
+import { getJob, saveJob } from '@/lib/storage/job-store';
 import {
   executeTranslationPipeline,
   isJobCurrentlyRunning,
@@ -28,6 +28,11 @@ export async function POST(
   try {
     const body = await req.json().catch(() => ({}));
     const runAsync = Boolean(body?.async);
+
+    if (body?.userAIConfig) {
+      job.userAIConfig = body.userAIConfig;
+      saveJob(job);
+    }
 
     if (runAsync) {
       // Trigger pipeline in background while client polls /api/jobs/[id]

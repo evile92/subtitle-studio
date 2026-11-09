@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { proofreadSubtitleJob } from '@/lib/translation/proofreader';
+import { createAdapterFromUserConfig } from '@/lib/ai/providers';
 import { checkRateLimit } from '@/lib/security/rate-limiter';
+import { UserClientAIConfig } from '@/types/subtitle';
 
 export async function POST(
   req: NextRequest,
@@ -21,11 +23,17 @@ export async function POST(
     const sequences = Array.isArray(body.sequences)
       ? body.sequences.map(Number).filter((n: number) => !isNaN(n))
       : undefined;
+    const userAIConfig = body.userAIConfig as UserClientAIConfig | undefined;
+
+    const customAdapter = userAIConfig?.apiKey
+      ? createAdapterFromUserConfig(userAIConfig)
+      : undefined;
 
     const result = await proofreadSubtitleJob({
       jobId: id,
       scope,
       sequences,
+      customAdapter,
     });
 
     return NextResponse.json(result);

@@ -8,7 +8,7 @@ import type {
   TranslationPreferencesConfig,
 } from '@/types/subtitle';
 import type { AIProviderAdapter } from '@/lib/ai/types';
-import { getAIProviderAdapter } from '@/lib/ai/providers';
+import { createAdapterFromUserConfig, getAIProviderAdapter } from '@/lib/ai/providers';
 import { getLanguageName } from '@/lib/languages';
 import { stripFormattingTags } from '@/lib/srt/parser';
 import { appendJobLog, getJob, saveJob } from '@/lib/storage/job-store';
@@ -314,7 +314,11 @@ export async function proofreadSubtitleJob(params: {
     throw new Error(`Translation job "${jobId}" not found.`);
   }
 
-  const aiAdapter = customAdapter || getAIProviderAdapter();
+  const aiAdapter =
+    customAdapter ||
+    (job.userAIConfig?.apiKey
+      ? createAdapterFromUserConfig(job.userAIConfig)
+      : getAIProviderAdapter());
   if (!aiAdapter.isConfigured()) {
     throw new Error(aiAdapter.getMissingConfigMessage());
   }

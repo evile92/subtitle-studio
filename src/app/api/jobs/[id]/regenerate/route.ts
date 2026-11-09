@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { regenerateSingleSubtitleEntry } from '@/lib/translation/pipeline';
+import { createAdapterFromUserConfig } from '@/lib/ai/providers';
 import { checkRateLimit } from '@/lib/security/rate-limiter';
+import { UserClientAIConfig } from '@/types/subtitle';
 
 export async function POST(
   req: NextRequest,
@@ -19,6 +21,7 @@ export async function POST(
       typeof body.customInstruction === 'string'
         ? body.customInstruction.trim()
         : undefined;
+    const userAIConfig = body.userAIConfig as UserClientAIConfig | undefined;
 
     if (!sequence || isNaN(sequence)) {
       return NextResponse.json(
@@ -27,10 +30,15 @@ export async function POST(
       );
     }
 
+    const customAdapter = userAIConfig?.apiKey
+      ? createAdapterFromUserConfig(userAIConfig)
+      : undefined;
+
     const result = await regenerateSingleSubtitleEntry({
       jobId: id,
       sequence,
       customInstruction,
+      customAdapter,
     });
 
     return NextResponse.json(result);

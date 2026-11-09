@@ -32,7 +32,8 @@ import { deleteJob, getJob, saveJob } from '@/lib/storage/job-store';
 import { UI_TRANSLATIONS } from '@/lib/i18n/translations';
 import { SAMPLE_SUBTITLE_FILES } from '@/lib/sample-subtitles';
 import type { AIProviderAdapter, AIGenerateRequest, AIGenerateResponse } from '@/lib/ai/types';
-import { extractJsonFromResponse } from '@/lib/ai/providers';
+import { extractJsonFromResponse, createAdapterFromUserConfig } from '@/lib/ai/providers';
+import { applyUserConfigToAIState, maskApiKey } from '@/lib/storage/client-config';
 import type { TranslationJob, TranslationPreferencesConfig } from '@/types/subtitle';
 
 const DEFAULT_PREFS: TranslationPreferencesConfig = {
@@ -765,5 +766,35 @@ Wait for me at the gate.
     );
 
     deleteJob(jobId);
+  });
+
+  it('Test 10: Client BYOK Configuration & DeepSeek Adapter Isolation', () => {
+    // 1. Adapter creation from transient user config
+    const adapter = createAdapterFromUserConfig({
+      provider: 'deepseek',
+      model: 'deepseek-flash',
+      apiKey: 'sk-test-deepseek-12345678',
+    });
+
+    assert.equal(adapter.provider, 'deepseek');
+    assert.equal(adapter.model, 'deepseek-flash');
+    assert.equal(adapter.isConfigured(), true);
+
+    // 2. Key masking
+    assert.equal(maskApiKey('sk-test-deepseek-12345678'), 'sk-t...5678');
+    assert.equal(maskApiKey('short'), '****');
+
+    // 3. User config merge with server state
+    const mergedState = applyUserConfigToAIState(null, {
+      provider: 'deepseek',
+      model: 'deepseek-flash',
+      apiKeys: { deepseek: 'sk-test-deepseek-12345678' },
+    });
+
+    assert.equal(mergedState.provider, 'deepseek');
+    assert.equal(mergedState.model, 'deepseek-flash');
+    assert.equal(mergedState.isConfigured, true);
+    assert.equal(mergedState.configuredSource, 'client-browser');
+    assert.equal(mergedState.maskedKey, 'sk-t...5678');
   });
 });
