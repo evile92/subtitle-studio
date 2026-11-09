@@ -15,6 +15,10 @@ import {
 import { useApp } from '@/context/AppContext';
 import { JobSummary } from '@/types/subtitle';
 import { getLanguageName } from '@/lib/languages';
+import {
+  downloadClientJobSrt,
+  getClientJob,
+} from '@/lib/storage/client-job-store';
 
 interface RecentHistoryProps {
   jobs: JobSummary[];
@@ -138,17 +142,28 @@ export function RecentHistory({
                   </button>
 
                   {job.translatedCount > 0 && (
-                    <a
-                      href={`/api/jobs/${job.id}/export?bom=${
-                        job.targetLanguage === 'ar' ? 'true' : 'false'
-                      }`}
-                      target="_blank"
-                      rel="noreferrer"
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const fullJob = getClientJob(job.id);
+                        if (fullJob) {
+                          downloadClientJobSrt(fullJob, {
+                            useBom: job.targetLanguage === 'ar',
+                          });
+                        } else {
+                          window.open(
+                            `/api/jobs/${job.id}/export?bom=${
+                              job.targetLanguage === 'ar' ? 'true' : 'false'
+                            }`,
+                            '_blank'
+                          );
+                        }
+                      }}
                       className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600"
                       title={t.actions.exportSrt}
                     >
                       <Download className="w-4 h-4" />
-                    </a>
+                    </button>
                   )}
 
                   <button

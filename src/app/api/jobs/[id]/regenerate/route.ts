@@ -39,6 +39,7 @@ export async function POST(
       sequence,
       customInstruction,
       customAdapter,
+      jobData: body.job,
     });
 
     return NextResponse.json(result);

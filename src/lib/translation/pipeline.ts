@@ -1,7 +1,11 @@
 import { z } from 'zod';
 import type {
+  ArabicDialect,
+  GlobalContextProfile,
+  GlossaryItem,
   SubtitleEntry,
   TranslationJob,
+  TranslationPreferencesConfig,
 } from '@/types/subtitle';
 import type { AIProviderAdapter } from '@/lib/ai/types';
 import { createAdapterFromUserConfig, getAIProviderAdapter } from '@/lib/ai/providers';
@@ -522,6 +526,139 @@ export async function executeTranslationPipeline(
 }
 
 /**
+ * Stateless single-batch translator for client-orchestrated execution on serverless platforms (Vercel).
+ * Translates one batch with preceding/following context overlap, recovers any omitted lines,
+ * and normalizes Arabic punctuation and tags.
+ */
+export async function translateSingleBatchStateless(params: {
+  batchEntries: SubtitleEntry[];
+  precedingEntries: SubtitleEntry[];
+  followingEntries: SubtitleEntry[];
+  sourceLanguage: string;
+  targetLanguage: string;
+  arabicDialect?: ArabicDialect;
+  preferences: TranslationPreferencesConfig;
+  contextProfile?: GlobalContextProfile;
+  glossary: GlossaryItem[];
+  aiAdapter: AIProviderAdapter;
+}): Promise<{
+  translations: Array<{
+    sequence: number;
+    translatedText: string;
+    aiTranslatedText: string;
+  }>;
+  newGlossaryTerms: Array<{
+    sourceTerm: string;
+    targetTerm: string;
+    category: GlossaryItem['category'];
+  }>;
+  omittedRecoveredCount: number;
+}> {
+  const {
+    batchEntries,
+    precedingEntries,
+    followingEntries,
+    sourceLanguage,
+    targetLanguage,
+    arabicDialect,
+    preferences,
+    contextProfile,
+    glossary,
+    aiAdapter,
+  } = params;
+
+  const isArabic = targetLanguage.toLowerCase() === 'ar';
+
+  const prompts = buildBatchTranslationPrompts({
+    batchEntries,
+    precedingEntries,
+    followingEntries,
+    sourceLanguage,
+    targetLanguage,
+    arabicDialect,
+    preferences,
+    contextProfile,
+    glossary,
+  });
+
+  const { data: batchResult } = await aiAdapter.generateStructured(
+    {
+      systemPrompt: prompts.systemPrompt,
+      userPrompt: prompts.userPrompt,
+      temperature: 0.2,
+    },
+    BatchTranslationResponseSchema
+  );
+
+  const returnedMap = new Map<number, string>();
+  for (const item of batchResult.translations) {
+    if (item.translatedText && item.translatedText.trim().length > 0) {
+      returnedMap.set(item.sequence, item.translatedText.trim());
+    }
+  }
+
+  const missingBatchEntries = batchEntries.filter(
+    (e) => !returnedMap.has(e.sequence)
+  );
+
+  if (missingBatchEntries.length > 0) {
+    const recoveryPrompts = buildBatchTranslationPrompts({
+      batchEntries: missingBatchEntries,
+      precedingEntries: batchEntries.slice(0, 3),
+      followingEntries: [],
+      sourceLanguage,
+      targetLanguage,
+      arabicDialect,
+      preferences,
+      contextProfile,
+      glossary,
+    });
+
+    const { data: recoveryData } = await aiAdapter.generateStructured(
+      {
+        systemPrompt: recoveryPrompts.systemPrompt,
+        userPrompt: recoveryPrompts.userPrompt,
+        temperature: 0.15,
+      },
+      BatchTranslationResponseSchema
+    );
+
+    for (const recItem of recoveryData.translations) {
+      if (recItem.translatedText && recItem.translatedText.trim().length > 0) {
+        returnedMap.set(recItem.sequence, recItem.translatedText.trim());
+      }
+    }
+  }
+
+  const translations: Array<{
+    sequence: number;
+    translatedText: string;
+    aiTranslatedText: string;
+  }> = [];
+
+  for (const entry of batchEntries) {
+    const rawTranslated = returnedMap.get(entry.sequence);
+    if (rawTranslated) {
+      const normalized = isArabic
+        ? normalizeArabicSubtitleText(rawTranslated, entry.originalText)
+        : preserveOuterFormattingTags(rawTranslated, entry.originalText);
+
+      translations.push({
+        sequence: entry.sequence,
+        translatedText: normalized,
+        aiTranslatedText: normalized,
+      });
+    }
+  }
+
+  return {
+    translations,
+    newGlossaryTerms: batchResult.newGlossaryTerms || [],
+    omittedRecoveredCount: missingBatchEntries.length,
+  };
+}
+
+/**
  * Regenerates a single subtitle entry using its surrounding context, Global Context Profile,
  * and Persistent Glossary while preserving all other validated translations.
  */
@@ -530,14 +667,16 @@ export async function regenerateSingleSubtitleEntry(params: {
   sequence: number;
   customInstruction?: string;
   customAdapter?: AIProviderAdapter;
+  jobData?: TranslationJob;
 }): Promise<{
+  job: TranslationJob;
   entry: SubtitleEntry;
   alternatives: string[];
   reasoning?: string;
   validationReport: TranslationJob['validationReport'];
 }> {
-  const { jobId, sequence, customInstruction, customAdapter } = params;
-  const job = getJob(jobId);
+  const { jobId, sequence, customInstruction, customAdapter, jobData } = params;
+  const job = getJob(jobId) || jobData;
   if (!job) {
     throw new Error(`Job "${jobId}" not found.`);
   }
@@ -616,6 +755,7 @@ export async function regenerateSingleSubtitleEntry(params: {
 
   const updatedEntry = job.entries[targetIdx];
   return {
+    job,
     entry: updatedEntry,
     alternatives: data.alternatives || [],
     reasoning: data.reasoning,

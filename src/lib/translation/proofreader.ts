@@ -304,12 +304,13 @@ export async function proofreadSubtitleJob(params: {
   scope?: 'smart' | 'all';
   sequences?: number[];
   customAdapter?: AIProviderAdapter;
+  jobData?: TranslationJob;
 }): Promise<{
   job: TranslationJob;
   summary: ProofreadResultSummary;
 }> {
-  const { jobId, scope = 'smart', sequences, customAdapter } = params;
-  const job = getJob(jobId);
+  const { jobId, scope = 'smart', sequences, customAdapter, jobData } = params;
+  const job = getJob(jobId) || jobData;
   if (!job) {
     throw new Error(`Translation job "${jobId}" not found.`);
   }

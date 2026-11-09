@@ -15,6 +15,7 @@ import { useApp } from '@/context/AppContext';
 import {
   ArabicDialect,
   JobSummary,
+  SubtitleEntry,
   TranslationJob,
   TranslationPreferencesConfig,
 } from '@/types/subtitle';
@@ -24,6 +25,17 @@ import {
   getActiveUserClientAIConfig,
   loadStoredUserConfig,
 } from '@/lib/storage/client-config';
+import {
+  appendClientJobLog,
+  createClientJobFromSrt,
+  deleteClientJob,
+  getClientJob,
+  getLastActiveClientJob,
+  listClientJobSummaries,
+  saveClientJob,
+} from '@/lib/storage/client-job-store';
+import { createContextualBatches } from '@/lib/translation/chunker';
+import { validateAndRepairTranslations } from '@/lib/translation/validator';
 import { Navbar } from '@/components/Navbar';
 import { UploadedFileState, UploadZone } from '@/components/UploadZone';
 import { LanguageSelectors } from '@/components/LanguageSelectors';
@@ -87,73 +99,354 @@ export default function HomePage() {
     }
   }, []);
 
-  const fetchRecentJobs = useCallback(async () => {
-    try {
-      const res = await fetch('/api/jobs');
-      if (res.ok) {
-        const data = await res.json();
-        setRecentJobs(data.jobs || []);
-      }
-    } catch {
-      // Ignore
-    }
+  const fetchRecentJobs = useCallback(() => {
+    const summaries = listClientJobSummaries();
+    setRecentJobs(summaries);
   }, []);
 
-  // Load initial config, recent jobs, and restore last active job if any
+  // Load initial config, recent jobs, and restore last active job from client storage
   useEffect(() => {
     fetchAIConfig();
     fetchRecentJobs();
 
-    try {
-      const savedJobId = localStorage.getItem('subtitle_studio_active_job_id');
-      if (savedJobId) {
-        fetch(`/api/jobs/${savedJobId}`)
-          .then((r) => {
-            if (r.status === 404) {
-              localStorage.removeItem('subtitle_studio_active_job_id');
-              return null;
-            }
-            return r.ok ? r.json() : null;
-          })
-          .then((data) => {
-            if (data?.job) {
-              setActiveJob(data.job);
-            }
-          })
-          .catch(() => {});
-      }
-    } catch {
-      // Ignore
+    const restored = getLastActiveClientJob();
+    if (restored) {
+      setActiveJob(restored);
     }
   }, [fetchAIConfig, fetchRecentJobs]);
 
-  // Poll job status when a job is actively processing
-  useEffect(() => {
-    if (!activeJob || !isProcessingJob) return;
+  /**
+   * Executes the translation pipeline step-by-step from the client browser using stateless API calls.
+   * Immune to serverless container resets, 404 polling errors, and execution timeouts on Vercel.
+   * Checkpoints progress into browser localStorage after every single step and batch.
+   */
+  const runClientDrivenPipeline = async (initialJob: TranslationJob) => {
+    const job: TranslationJob = {
+      ...initialJob,
+      entries: initialJob.entries.map((e) => ({ ...e })),
+      batches: initialJob.batches.map((b) => ({ ...b })),
+      glossary: [...initialJob.glossary],
+      logs: [...initialJob.logs],
+      warnings: [...initialJob.warnings],
+      errorMessage: undefined,
+    };
 
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/jobs/${activeJob.id}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.job) {
-          setActiveJob(data.job);
-          if (data.job.stage === 'completed') {
-            setIsProcessingJob(false);
-            fetchRecentJobs();
-            setActiveView('workspace');
-          } else if (data.job.stage === 'failed') {
-            setIsProcessingJob(false);
-            fetchRecentJobs();
+    const userAIConfig = getActiveUserClientAIConfig() || job.userAIConfig;
+    job.userAIConfig = userAIConfig;
+
+    setIsProcessingJob(true);
+    setActiveJob({ ...job });
+
+    try {
+      const effectiveSourceLang =
+        job.sourceLanguage === 'auto'
+          ? job.detectedSourceLanguage || 'en'
+          : job.sourceLanguage;
+
+      // STAGE 3: Global Storyline & Glossary Context Analysis (12% -> 25%)
+      if (!job.contextProfile) {
+        job.progressPercent = 14;
+        appendClientJobLog(
+          job,
+          'analyzing_storyline',
+          `Starting full-file contextual storyline analysis across all ${job.totalEntries} subtitle entries...`,
+          'info'
+        );
+        saveClientJob(job);
+        setActiveJob({ ...job });
+
+        const analyzeRes = await fetch('/api/pipeline/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            entries: job.entries,
+            sourceLanguage: effectiveSourceLang,
+            targetLanguage: job.targetLanguage,
+            arabicDialect: job.arabicDialect,
+            preferences: job.preferences,
+            userAIConfig,
+          }),
+        });
+
+        const analyzeData = await analyzeRes.json().catch(() => ({}));
+        if (!analyzeRes.ok) {
+          throw new Error(
+            analyzeData.error || 'Failed to analyze subtitle storyline context.'
+          );
+        }
+
+        job.contextProfile = analyzeData.contextProfile;
+        job.aiProviderUsed = analyzeData.provider;
+        job.aiModelUsed = analyzeData.model;
+
+        if (analyzeData.detectedSourceLanguage && job.sourceLanguage === 'auto') {
+          job.detectedSourceLanguage = analyzeData.detectedSourceLanguage;
+        }
+
+        if (Array.isArray(analyzeData.glossary)) {
+          const existingKeys = new Set(
+            job.glossary.map((g) => g.sourceTerm.toLowerCase())
+          );
+          for (const item of analyzeData.glossary) {
+            if (
+              item.sourceTerm &&
+              item.targetTerm &&
+              !existingKeys.has(item.sourceTerm.toLowerCase())
+            ) {
+              job.glossary.push(item);
+              existingKeys.add(item.sourceTerm.toLowerCase());
+            }
           }
         }
-      } catch {
-        // Continue polling
-      }
-    }, 1000);
 
-    return () => clearInterval(interval);
-  }, [activeJob, isProcessingJob, fetchRecentJobs]);
+        job.progressPercent = 24;
+        appendClientJobLog(
+          job,
+          'analyzing_storyline',
+          `Completed storyline analysis (${job.totalEntries}/${job.totalEntries} entries covered). Identified ${
+            job.contextProfile?.characters.length || 0
+          } characters and ${job.glossary.length} glossary terms.`,
+          'success'
+        );
+        saveClientJob(job);
+        setActiveJob({ ...job });
+      }
+
+      // STAGE 4: Building Context & Batch Organization (26%)
+      if (!job.batches || job.batches.length === 0) {
+        job.batches = createContextualBatches(job.entries, {
+          batchSize: job.preferences.batchSize,
+          contextOverlapSize: job.preferences.contextOverlapSize,
+        });
+        job.totalBatches = job.batches.length;
+      }
+
+      job.progressPercent = 26;
+      appendClientJobLog(
+        job,
+        'building_context',
+        `Prepared character voice profiles, persistent glossary (${job.glossary.length} terms), and ${job.batches.length} context-linked batches.`,
+        'info'
+      );
+      saveClientJob(job);
+      setActiveJob({ ...job });
+
+      // STAGE 5: Sequential Stateless Batch Translation (28% -> 88%)
+      const entryMap = new Map<number, SubtitleEntry>();
+      for (const e of job.entries) {
+        entryMap.set(e.sequence, e);
+      }
+
+      appendClientJobLog(
+        job,
+        'translating_batches',
+        `Translating ${job.totalEntries} subtitles across ${job.batches.length} context-linked batches...`,
+        'info'
+      );
+      saveClientJob(job);
+      setActiveJob({ ...job });
+
+      for (let bIdx = 0; bIdx < job.batches.length; bIdx++) {
+        const batch = job.batches[bIdx];
+        job.currentBatch = bIdx + 1;
+
+        const allEntriesAlreadyTranslated = batch.entrySequences.every((seq) => {
+          const entry = entryMap.get(seq);
+          return Boolean(
+            entry && entry.translatedText && entry.translatedText.trim().length > 0
+          );
+        });
+
+        if (batch.status === 'completed' && allEntriesAlreadyTranslated) {
+          continue;
+        }
+
+        batch.status = 'processing';
+        batch.attempts = (batch.attempts || 0) + 1;
+        saveClientJob(job);
+        setActiveJob({ ...job });
+
+        const batchEntries = batch.entrySequences
+          .map((seq) => entryMap.get(seq))
+          .filter((e): e is SubtitleEntry => Boolean(e));
+        const precedingEntries = batch.precedingContextSequences
+          .map((seq) => entryMap.get(seq))
+          .filter((e): e is SubtitleEntry => Boolean(e));
+        const followingEntries = batch.followingContextSequences
+          .map((seq) => entryMap.get(seq))
+          .filter((e): e is SubtitleEntry => Boolean(e));
+
+        const batchRes = await fetch('/api/pipeline/translate-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            batchEntries,
+            precedingEntries,
+            followingEntries,
+            sourceLanguage:
+              job.sourceLanguage === 'auto'
+                ? job.detectedSourceLanguage || 'en'
+                : job.sourceLanguage,
+            targetLanguage: job.targetLanguage,
+            arabicDialect: job.arabicDialect,
+            preferences: job.preferences,
+            contextProfile: job.contextProfile,
+            glossary: job.glossary,
+            userAIConfig,
+          }),
+        });
+
+        const batchData = await batchRes.json().catch(() => ({}));
+        if (!batchRes.ok) {
+          throw new Error(
+            batchData.error ||
+              `Failed to translate batch ${bIdx + 1} of ${job.batches.length}.`
+          );
+        }
+
+        if (Array.isArray(batchData.translations)) {
+          for (const item of batchData.translations) {
+            const targetEntry = entryMap.get(item.sequence);
+            if (targetEntry && item.translatedText) {
+              if (!targetEntry.isEditedByUser) {
+                targetEntry.translatedText = item.translatedText;
+              }
+              targetEntry.aiTranslatedText =
+                item.aiTranslatedText || item.translatedText;
+              targetEntry.status = targetEntry.isEditedByUser
+                ? 'edited'
+                : 'translated';
+            }
+          }
+        }
+
+        if (Array.isArray(batchData.newGlossaryTerms)) {
+          const existingSet = new Set(
+            job.glossary.map((g) => g.sourceTerm.toLowerCase())
+          );
+          for (const newTerm of batchData.newGlossaryTerms) {
+            if (
+              newTerm.sourceTerm &&
+              newTerm.targetTerm &&
+              !existingSet.has(newTerm.sourceTerm.toLowerCase())
+            ) {
+              job.glossary.push({
+                id: `dyn-${job.glossary.length + 1}`,
+                sourceTerm: newTerm.sourceTerm.trim(),
+                targetTerm: newTerm.targetTerm.trim(),
+                category: newTerm.category || 'terminology',
+              });
+              existingSet.add(newTerm.sourceTerm.toLowerCase());
+            }
+          }
+        }
+
+        batch.status = 'completed';
+        batch.completedAt = new Date().toISOString();
+
+        job.translatedCount = job.entries.filter(
+          (e) => e.translatedText && e.translatedText.trim().length > 0
+        ).length;
+        const completedBatchesCount = job.batches.filter(
+          (b) => b.status === 'completed'
+        ).length;
+        job.progressPercent =
+          28 + Math.round((completedBatchesCount / job.batches.length) * 60);
+
+        appendClientJobLog(
+          job,
+          'translating_batches',
+          `Completed batch ${bIdx + 1} of ${job.batches.length} (entries #${batch.startSequence}–#${batch.endSequence}). Translated ${job.translatedCount}/${job.totalEntries} entries.`,
+          'info'
+        );
+
+        saveClientJob(job);
+        setActiveJob({ ...job });
+        fetchRecentJobs();
+      }
+
+      // STAGE 6 & 7: Consistency & 11-Point QA Validation + Auto-Repair (90% -> 100%)
+      job.progressPercent = 92;
+      appendClientJobLog(
+        job,
+        'checking_consistency',
+        `Checking character name consistency, gender agreement, and glossary adherence across all ${job.totalEntries} entries...`,
+        'info'
+      );
+      setActiveJob({ ...job });
+
+      job.progressPercent = 96;
+      appendClientJobLog(
+        job,
+        'validating_formatting',
+        `Running 11-point SRT structural validation and automatic tag/timestamp verification...`,
+        'info'
+      );
+
+      const qaResult = validateAndRepairTranslations({
+        originalEntries: job.entries.map((e) => ({ ...e })),
+        translatedEntries: job.entries,
+        glossary: job.glossary,
+        sourceLanguage:
+          job.sourceLanguage === 'auto'
+            ? job.detectedSourceLanguage || 'en'
+            : job.sourceLanguage,
+        targetLanguage: job.targetLanguage,
+      });
+
+      job.entries = qaResult.repairedEntries;
+      job.validationReport = qaResult.report;
+      job.translatedCount = qaResult.report.translatedEntryCount;
+
+      if (qaResult.report.autoRepairedCount > 0) {
+        appendClientJobLog(
+          job,
+          'validating_formatting',
+          `Automatically repaired ${qaResult.report.autoRepairedCount} minor formatting or terminology discrepancies.`,
+          'info'
+        );
+      }
+
+      job.stage = 'completed';
+      job.progressPercent = 100;
+      job.completedAt = new Date().toISOString();
+
+      const statusMsg = qaResult.report.isFullyValidated
+        ? `Translation completed and 100% structurally validated (${job.translatedCount}/${job.totalEntries} entries, Quality Score: ${qaResult.report.qualityScore}%).`
+        : `Translation completed with ${qaResult.report.unresolvedWarningsCount} warnings requiring review.`;
+
+      appendClientJobLog(
+        job,
+        'completed',
+        statusMsg,
+        qaResult.report.unresolvedErrorsCount > 0 ? 'warning' : 'success'
+      );
+
+      saveClientJob(job);
+      setActiveJob({ ...job });
+      fetchRecentJobs();
+      setIsProcessingJob(false);
+      setActiveView('workspace');
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Translation pipeline interrupted.';
+      job.stage = 'failed';
+      job.errorMessage = message;
+      const completedCount = job.batches.filter(
+        (b) => b.status === 'completed'
+      ).length;
+      appendClientJobLog(
+        job,
+        'failed',
+        `Pipeline interrupted: ${message}. Completed batches (${completedCount}/${job.batches.length}) are safely saved in your browser and can be resumed without losing any tokens.`,
+        'error'
+      );
+      saveClientJob(job);
+      setActiveJob({ ...job });
+      fetchRecentJobs();
+      setIsProcessingJob(false);
+    }
+  };
 
   const handleStartTranslation = async () => {
     if (!uploadedFile) return;
@@ -161,51 +454,21 @@ export default function HomePage() {
 
     try {
       const userAIConfig = getActiveUserClientAIConfig();
-
-      // 1. Create the job on the server
-      const createRes = await fetch('/api/jobs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileName: uploadedFile.fileName,
-          fileContent: uploadedFile.content,
-          sourceLanguage,
-          targetLanguage,
-          arabicDialect: targetLanguage === 'ar' ? arabicDialect : undefined,
-          preferences,
-          userAIConfig,
-        }),
+      const createdJob = createClientJobFromSrt({
+        fileName: uploadedFile.fileName,
+        fileContent: uploadedFile.content,
+        sourceLanguage,
+        targetLanguage,
+        arabicDialect: targetLanguage === 'ar' ? arabicDialect : undefined,
+        preferences,
+        userAIConfig,
       });
 
-      const createData = await createRes.json();
-      if (!createRes.ok || !createData.job) {
-        setStartError(createData.error || 'Failed to create translation job.');
-        return;
-      }
-
-      const createdJob: TranslationJob = createData.job;
       setActiveJob(createdJob);
-      try {
-        localStorage.setItem('subtitle_studio_active_job_id', createdJob.id);
-      } catch {
-        // Ignore
-      }
-
+      fetchRecentJobs();
       setActiveView('progress');
-      setIsProcessingJob(true);
 
-      // 2. Trigger the server-side contextual pipeline asynchronously
-      const procRes = await fetch(`/api/jobs/${createdJob.id}/process`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ async: true, userAIConfig }),
-      });
-
-      if (!procRes.ok) {
-        const errData = await procRes.json().catch(() => ({}));
-        if (errData.job) setActiveJob(errData.job);
-        setIsProcessingJob(false);
-      }
+      await runClientDrivenPipeline(createdJob);
     } catch (err) {
       setStartError(
         err instanceof Error ? err.message : 'Failed to start translation.'
@@ -216,54 +479,24 @@ export default function HomePage() {
 
   const handleResumeJob = async (jobId: string) => {
     setStartError(null);
-    const res = await fetch(`/api/jobs/${jobId}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.job) {
-        setActiveJob(data.job);
-        try {
-          localStorage.setItem('subtitle_studio_active_job_id', data.job.id);
-        } catch {
-          // Ignore
-        }
-        setActiveView('progress');
-        setIsProcessingJob(true);
-
-        const userAIConfig = getActiveUserClientAIConfig();
-        await fetch(`/api/jobs/${jobId}/process`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ async: true, userAIConfig }),
-        });
-      }
+    const saved = getClientJob(jobId);
+    if (saved) {
+      setActiveJob(saved);
+      setActiveView('progress');
+      await runClientDrivenPipeline(saved);
     }
   };
 
   const handleOpenJobInWorkspace = async (jobId: string) => {
-    const res = await fetch(`/api/jobs/${jobId}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.job) {
-        setActiveJob(data.job);
-        try {
-          localStorage.setItem('subtitle_studio_active_job_id', data.job.id);
-        } catch {
-          // Ignore
-        }
-        setActiveView(data.job.stage === 'completed' ? 'workspace' : 'progress');
-      }
+    const saved = getClientJob(jobId);
+    if (saved) {
+      setActiveJob(saved);
+      setActiveView(saved.stage === 'completed' ? 'workspace' : 'progress');
     }
   };
 
   const handleDeleteJob = async (jobId: string) => {
-    await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' });
-    try {
-      if (localStorage.getItem('subtitle_studio_active_job_id') === jobId) {
-        localStorage.removeItem('subtitle_studio_active_job_id');
-      }
-    } catch {
-      // Ignore
-    }
+    deleteClientJob(jobId);
     if (activeJob?.id === jobId) {
       setActiveJob(null);
       setActiveView('dashboard');

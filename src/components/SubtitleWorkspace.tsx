@@ -34,6 +34,11 @@ import { SubtitlePreview } from './SubtitlePreview';
 import { ContextProfileView } from './ContextProfileView';
 import { ValidationReportView } from './ValidationReportView';
 import { getActiveUserClientAIConfig } from '@/lib/storage/client-config';
+import {
+  downloadClientJobSrt,
+  saveClientJob,
+} from '@/lib/storage/client-job-store';
+import { validateAndRepairTranslations } from '@/lib/translation/validator';
 
 interface SubtitleWorkspaceProps {
   job: TranslationJob;
@@ -161,25 +166,67 @@ export function SubtitleWorkspace({
   ) => {
     setIsSaving(true);
     try {
-      const res = await fetch(`/api/jobs/${job.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ updatedEntries: updates }),
-      });
-      const data = await res.json();
-      if (res.ok && data.job) {
-        onJobUpdated(data.job);
-        // Clear saved sequences from draftEdits
-        setDraftEdits((prev) => {
-          const next = { ...prev };
-          for (const u of updates) {
-            delete next[u.sequence];
-          }
-          return next;
-        });
-        setSaveSuccess(true);
-        setTimeout(() => setSaveSuccess(false), 2500);
+      const updatesBySeq = new Map<
+        number,
+        { translatedText: string; isEditedByUser?: boolean; restoreAi?: boolean }
+      >();
+      for (const item of updates) {
+        if (typeof item.sequence === 'number') {
+          updatesBySeq.set(item.sequence, item);
+        }
       }
+
+      const updatedEntries = job.entries.map((entry) => {
+        const upd = updatesBySeq.get(entry.sequence);
+        if (!upd) return { ...entry };
+        if (upd.restoreAi && entry.aiTranslatedText) {
+          return {
+            ...entry,
+            translatedText: entry.aiTranslatedText,
+            isEditedByUser: false,
+            status: 'translated' as const,
+          };
+        }
+        return {
+          ...entry,
+          translatedText: String(upd.translatedText ?? ''),
+          isEditedByUser: upd.isEditedByUser ?? true,
+          status: 'edited' as const,
+        };
+      });
+
+      const effectiveSource =
+        job.sourceLanguage === 'auto'
+          ? job.detectedSourceLanguage || 'en'
+          : job.sourceLanguage;
+
+      const qaResult = validateAndRepairTranslations({
+        originalEntries: updatedEntries,
+        translatedEntries: updatedEntries,
+        glossary: job.glossary,
+        sourceLanguage: effectiveSource,
+        targetLanguage: job.targetLanguage,
+      });
+
+      const updatedJob: TranslationJob = {
+        ...job,
+        entries: qaResult.repairedEntries,
+        validationReport: qaResult.report,
+        translatedCount: qaResult.report.translatedEntryCount,
+      };
+
+      saveClientJob(updatedJob);
+      onJobUpdated(updatedJob);
+
+      setDraftEdits((prev) => {
+        const next = { ...prev };
+        for (const u of updates) {
+          delete next[u.sequence];
+        }
+        return next;
+      });
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
     } finally {
       setIsSaving(false);
     }
@@ -245,6 +292,7 @@ export function SubtitleWorkspace({
           sequence,
           customInstruction: instruction,
           userAIConfig,
+          job,
         }),
       });
       const data = await res.json();
@@ -253,11 +301,9 @@ export function SubtitleWorkspace({
         return;
       }
 
-      // Refresh full job state
-      const jobRes = await fetch(`/api/jobs/${job.id}`);
-      const jobData = await jobRes.json();
-      if (jobData.job) {
-        onJobUpdated(jobData.job);
+      if (data.job) {
+        saveClientJob(data.job);
+        onJobUpdated(data.job);
       }
 
       if (Array.isArray(data.alternatives) && data.alternatives.length > 0) {
@@ -278,15 +324,31 @@ export function SubtitleWorkspace({
   };
 
   const handleUpdateGlossary = async (updatedGlossary: GlossaryItem[]) => {
-    const res = await fetch(`/api/jobs/${job.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ glossary: updatedGlossary }),
+    const cleanedGlossary = updatedGlossary.filter(
+      (g) => g.sourceTerm && g.targetTerm
+    );
+    const effectiveSource =
+      job.sourceLanguage === 'auto'
+        ? job.detectedSourceLanguage || 'en'
+        : job.sourceLanguage;
+
+    const qaResult = validateAndRepairTranslations({
+      originalEntries: job.entries,
+      translatedEntries: job.entries,
+      glossary: cleanedGlossary,
+      sourceLanguage: effectiveSource,
+      targetLanguage: job.targetLanguage,
     });
-    const data = await res.json();
-    if (res.ok && data.job) {
-      onJobUpdated(data.job);
-    }
+
+    const updatedJob: TranslationJob = {
+      ...job,
+      glossary: cleanedGlossary,
+      entries: qaResult.repairedEntries,
+      validationReport: qaResult.report,
+    };
+
+    saveClientJob(updatedJob);
+    onJobUpdated(updatedJob);
   };
 
   const handleRunProofread = async (scope: 'smart' | 'all' = 'smart') => {
@@ -298,7 +360,7 @@ export function SubtitleWorkspace({
       const res = await fetch(`/api/jobs/${job.id}/proofread`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scope, userAIConfig }),
+        body: JSON.stringify({ scope, userAIConfig, job }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -306,6 +368,7 @@ export function SubtitleWorkspace({
         return;
       }
       if (data.job) {
+        saveClientJob(data.job);
         onJobUpdated(data.job);
       }
       if (data.summary) {
@@ -322,12 +385,10 @@ export function SubtitleWorkspace({
   };
 
   const triggerDownload = (options: { bom?: boolean; bilingual?: boolean } = {}) => {
-    const params = new URLSearchParams();
-    if (options.bom) params.set('bom', 'true');
-    if (options.bilingual) params.set('bilingual', 'true');
-    const qs = params.toString();
-    const url = `/api/jobs/${job.id}/export${qs ? `?${qs}` : ''}`;
-    window.open(url, '_blank');
+    downloadClientJobSrt(job, {
+      useBom: options.bom,
+      bilingual: options.bilingual,
+    });
     setExportMenuOpen(false);
   };
 

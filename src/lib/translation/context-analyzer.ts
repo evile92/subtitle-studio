@@ -260,6 +260,7 @@ export async function analyzeFullSubtitleContext(params: {
   preferences: TranslationPreferencesConfig;
   aiAdapter: AIProviderAdapter;
   onProgress?: (message: string, pass: number, totalPasses: number) => void;
+  singlePassFastMode?: boolean;
 }): Promise<{
   contextProfile: GlobalContextProfile;
   glossary: GlossaryItem[];
@@ -273,6 +274,7 @@ export async function analyzeFullSubtitleContext(params: {
     preferences,
     aiAdapter,
     onProgress,
+    singlePassFastMode = false,
   } = params;
 
   const targetLangName = getLanguageName(targetLanguage, 'en');
@@ -284,8 +286,23 @@ export async function analyzeFullSubtitleContext(params: {
 
   // Split entries into segments if the file is very large so 100% of entries are read without truncation
   const segments: SubtitleEntry[][] = [];
-  for (let i = 0; i < entries.length; i += MAX_ENTRIES_PER_ANALYSIS_PASS) {
-    segments.push(entries.slice(i, i + MAX_ENTRIES_PER_ANALYSIS_PASS));
+  if (singlePassFastMode && entries.length > MAX_ENTRIES_PER_ANALYSIS_PASS) {
+    const step = entries.length / MAX_ENTRIES_PER_ANALYSIS_PASS;
+    const sampled: SubtitleEntry[] = [];
+    const pickedSeq = new Set<number>();
+    for (let i = 0; i < MAX_ENTRIES_PER_ANALYSIS_PASS; i++) {
+      const idx = Math.min(entries.length - 1, Math.floor(i * step));
+      const entry = entries[idx];
+      if (entry && !pickedSeq.has(entry.sequence)) {
+        sampled.push(entry);
+        pickedSeq.add(entry.sequence);
+      }
+    }
+    segments.push(sampled);
+  } else {
+    for (let i = 0; i < entries.length; i += MAX_ENTRIES_PER_ANALYSIS_PASS) {
+      segments.push(entries.slice(i, i + MAX_ENTRIES_PER_ANALYSIS_PASS));
+    }
   }
 
   const systemPrompt = `You are a Chief Audiovisual Script Analyst and Localization Director.
@@ -346,7 +363,7 @@ IMPORTANT:
       1
     );
 
-    const transcript = formatTranscriptSegment(entries);
+    const transcript = formatTranscriptSegment(segments[0]);
     const userPrompt = `Analyze the following complete subtitle file (${entries.length} entries, from #${entries[0]?.sequence} to #${entries[entries.length - 1]?.sequence}) for translation into ${targetLangName}${dialectInfo ? ` (${dialectInfo.nameEn})` : ''}:
 
 === COMPLETE SUBTITLE TRANSCRIPT ===

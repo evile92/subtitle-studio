@@ -34,6 +34,7 @@ export async function POST(
       scope,
       sequences,
       customAdapter,
+      jobData: body.job,
     });
 
     return NextResponse.json(result);
