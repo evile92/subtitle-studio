@@ -29,7 +29,12 @@ import {
   getLanguageName,
   isRtlLanguage,
 } from '@/lib/languages';
-import type { ProofreadResultSummary } from '@/lib/translation/proofreader';
+import {
+  detectEntriesNeedingProofread,
+  extractResidualLatinWords,
+  type ProofreadChangeItem,
+  type ProofreadResultSummary,
+} from '@/lib/translation/proofread-utils';
 import { SubtitlePreview } from './SubtitlePreview';
 import { ContextProfileView } from './ContextProfileView';
 import { ValidationReportView } from './ValidationReportView';
@@ -82,6 +87,10 @@ export function SubtitleWorkspace({
 
   // Second-pass AI Proofread & Linguistic Fix state
   const [isProofreading, setIsProofreading] = useState(false);
+  const [proofreadProgress, setProofreadProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
   const [proofreadMenuOpen, setProofreadMenuOpen] = useState(false);
   const [proofreadSummary, setProofreadSummary] =
     useState<ProofreadResultSummary | null>(null);
@@ -285,6 +294,15 @@ export function SubtitleWorkspace({
     setRegenError(null);
     try {
       const userAIConfig = getActiveUserClientAIConfig();
+      const targetIdx = job.entries.findIndex((e) => e.sequence === sequence);
+      const compactEntries =
+        targetIdx !== -1
+          ? job.entries.slice(
+              Math.max(0, targetIdx - 6),
+              Math.min(job.entries.length, targetIdx + 7)
+            )
+          : job.entries;
+
       const res = await fetch(`/api/jobs/${job.id}/regenerate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -292,24 +310,67 @@ export function SubtitleWorkspace({
           sequence,
           customInstruction: instruction,
           userAIConfig,
-          job,
+          job: {
+            ...job,
+            entries: compactEntries,
+            batches: [],
+            logs: [],
+          },
         }),
       });
-      const data = await res.json();
+
+      const rawText = await res.text();
+      let data: {
+        error?: string;
+        entry?: SubtitleEntry;
+        alternatives?: string[];
+      } = {};
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        throw new Error(
+          res.status === 504
+            ? 'Server request timed out. Please try again.'
+            : `Server returned an unexpected response (${res.status}).`
+        );
+      }
+
       if (!res.ok) {
         setRegenError(data.error || 'Failed to regenerate subtitle line.');
         return;
       }
 
-      if (data.job) {
-        saveClientJob(data.job);
-        onJobUpdated(data.job);
+      if (data.entry) {
+        const updatedEntries = job.entries.map((e) =>
+          e.sequence === sequence ? data.entry! : { ...e }
+        );
+        const effectiveSource =
+          job.sourceLanguage === 'auto'
+            ? job.detectedSourceLanguage || 'en'
+            : job.sourceLanguage;
+
+        const qaResult = validateAndRepairTranslations({
+          originalEntries: updatedEntries,
+          translatedEntries: updatedEntries,
+          glossary: job.glossary,
+          sourceLanguage: effectiveSource,
+          targetLanguage: job.targetLanguage,
+        });
+
+        const updatedJob: TranslationJob = {
+          ...job,
+          entries: qaResult.repairedEntries,
+          validationReport: qaResult.report,
+          translatedCount: qaResult.report.translatedEntryCount,
+        };
+        saveClientJob(updatedJob);
+        onJobUpdated(updatedJob);
       }
 
       if (Array.isArray(data.alternatives) && data.alternatives.length > 0) {
         setRegenAlternatives((prev) => ({
           ...prev,
-          [sequence]: data.alternatives,
+          [sequence]: data.alternatives!,
         }));
       }
       setRegenPromptSeq(null);
@@ -354,33 +415,190 @@ export function SubtitleWorkspace({
   const handleRunProofread = async (scope: 'smart' | 'all' = 'smart') => {
     setProofreadMenuOpen(false);
     setIsProofreading(true);
+    setProofreadProgress(null);
     setRegenError(null);
+
     try {
       const userAIConfig = getActiveUserClientAIConfig();
-      const res = await fetch(`/api/jobs/${job.id}/proofread`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scope, userAIConfig, job }),
+      const effectiveSource =
+        job.sourceLanguage === 'auto'
+          ? job.detectedSourceLanguage || 'en'
+          : job.sourceLanguage;
+      const isArabic = job.targetLanguage.toLowerCase() === 'ar';
+
+      const workingEntries = job.entries.map((e) => ({ ...e }));
+      const entriesBySeq = new Map<number, SubtitleEntry>();
+      for (const e of workingEntries) {
+        entriesBySeq.set(e.sequence, e);
+      }
+
+      const detection = detectEntriesNeedingProofread(
+        workingEntries,
+        job.targetLanguage
+      );
+
+      let targetSequenceList: number[] = [];
+      let effectiveScope: 'smart' | 'all' = scope;
+
+      if (scope === 'smart') {
+        if (detection.sequences.length > 0) {
+          targetSequenceList = detection.sequences;
+        } else {
+          effectiveScope = 'all';
+          targetSequenceList = workingEntries
+            .filter((e) => !e.isSoundEffect)
+            .map((e) => e.sequence);
+        }
+      } else {
+        targetSequenceList = workingEntries
+          .filter((e) => !e.isSoundEffect)
+          .map((e) => e.sequence);
+      }
+
+      const targetEntries = targetSequenceList
+        .map((seq) => entriesBySeq.get(seq))
+        .filter((e): e is SubtitleEntry => Boolean(e));
+
+      const PROOFREAD_BATCH_SIZE = 25;
+      const totalBatches = Math.max(
+        1,
+        Math.ceil(targetEntries.length / PROOFREAD_BATCH_SIZE)
+      );
+      const allChanges: ProofreadChangeItem[] = [];
+
+      for (let bIdx = 0; bIdx < totalBatches; bIdx++) {
+        setProofreadProgress({ current: bIdx + 1, total: totalBatches });
+
+        const batchSlice = targetEntries.slice(
+          bIdx * PROOFREAD_BATCH_SIZE,
+          (bIdx + 1) * PROOFREAD_BATCH_SIZE
+        );
+        if (batchSlice.length === 0) continue;
+
+        const contextEntries: SubtitleEntry[] = [];
+        const batchSeqSet = new Set(batchSlice.map((e) => e.sequence));
+        for (const item of batchSlice) {
+          const prev = entriesBySeq.get(item.sequence - 1);
+          const next = entriesBySeq.get(item.sequence + 1);
+          if (prev && !batchSeqSet.has(prev.sequence)) contextEntries.push(prev);
+          if (next && !batchSeqSet.has(next.sequence)) contextEntries.push(next);
+        }
+
+        const res = await fetch('/api/pipeline/proofread-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            targetEntries: batchSlice,
+            contextEntries,
+            reasonsBySequence: detection.reasonsBySequence,
+            sourceLanguage: effectiveSource,
+            targetLanguage: job.targetLanguage,
+            arabicDialect: job.arabicDialect,
+            preferences: job.preferences,
+            contextProfile: job.contextProfile,
+            glossary: job.glossary,
+            userAIConfig,
+          }),
+        });
+
+        const rawText = await res.text();
+        let data: {
+          error?: string;
+          revisions?: Array<{
+            sequence: number;
+            revisedText: string;
+            reason: string;
+            changed: boolean;
+            previousClean: string;
+            nextClean: string;
+          }>;
+        } = {};
+
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          throw new Error(
+            res.status === 504
+              ? `Batch ${bIdx + 1}/${totalBatches} timed out on the server. Previously completed proofread batches were saved.`
+              : `Server returned an unexpected response on batch ${bIdx + 1}/${totalBatches}.`
+          );
+        }
+
+        if (!res.ok) {
+          throw new Error(
+            data.error || `Failed to proofread batch ${bIdx + 1}/${totalBatches}.`
+          );
+        }
+
+        if (Array.isArray(data.revisions)) {
+          for (const rev of data.revisions) {
+            const targetEntry = entriesBySeq.get(rev.sequence);
+            if (!targetEntry) continue;
+
+            if (rev.changed) {
+              if (!targetEntry.aiTranslatedText) {
+                targetEntry.aiTranslatedText = targetEntry.translatedText;
+              }
+              targetEntry.translatedText = rev.revisedText;
+              targetEntry.status = 'repaired';
+              targetEntry.translationNotes = rev.reason;
+
+              allChanges.push({
+                sequence: targetEntry.sequence,
+                originalText: targetEntry.originalText,
+                previousTranslation: rev.previousClean,
+                revisedTranslation: rev.nextClean,
+                reason: rev.reason,
+              });
+            } else if (targetEntry.translatedText) {
+              targetEntry.translatedText = rev.revisedText;
+            }
+          }
+        }
+
+        const qaResult = validateAndRepairTranslations({
+          originalEntries: workingEntries,
+          translatedEntries: workingEntries,
+          glossary: job.glossary,
+          sourceLanguage: effectiveSource,
+          targetLanguage: job.targetLanguage,
+        });
+
+        const updatedJob: TranslationJob = {
+          ...job,
+          entries: qaResult.repairedEntries,
+          validationReport: qaResult.report,
+          translatedCount: qaResult.report.translatedEntryCount,
+        };
+
+        saveClientJob(updatedJob);
+        onJobUpdated(updatedJob);
+      }
+
+      const remainingEnglishCount = isArabic
+        ? workingEntries.filter(
+            (e) =>
+              !e.isSoundEffect &&
+              extractResidualLatinWords(e.translatedText || '').length > 0
+          ).length
+        : 0;
+
+      setProofreadSummary({
+        scopeUsed: effectiveScope,
+        totalEntriesInJob: job.totalEntries,
+        reviewedCount: targetEntries.length,
+        correctedCount: allChanges.length,
+        remainingEnglishCount,
+        changes: allChanges,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setRegenError(data.error || 'Failed to run AI proofreading.');
-        return;
-      }
-      if (data.job) {
-        saveClientJob(data.job);
-        onJobUpdated(data.job);
-      }
-      if (data.summary) {
-        setProofreadSummary(data.summary);
-        setShowProofreadDetails(true);
-      }
+      setShowProofreadDetails(true);
     } catch (err) {
       setRegenError(
         err instanceof Error ? err.message : 'Failed to run AI proofreading.'
       );
     } finally {
       setIsProofreading(false);
+      setProofreadProgress(null);
     }
   };
 
@@ -488,7 +706,11 @@ export function SubtitleWorkspace({
                 )}
                 <span>
                   {isProofreading
-                    ? t.workspace.proofread.running
+                    ? `${t.workspace.proofread.running}${
+                        proofreadProgress
+                          ? ` (${proofreadProgress.current}/${proofreadProgress.total})`
+                          : ''
+                      }`
                     : t.workspace.proofread.button}
                 </span>
               </button>

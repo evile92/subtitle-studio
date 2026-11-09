@@ -504,3 +504,131 @@ export async function proofreadSubtitleJob(params: {
     },
   };
 }
+
+/**
+ * Stateless single-batch AI proofreader for client-driven sequential proofreading on Vercel.
+ * Reviews up to 25-30 entries in a single fast request (~2-4s) so full-file proofreading
+ * never hits serverless function timeouts.
+ */
+export async function proofreadSingleBatchStateless(params: {
+  targetEntries: SubtitleEntry[];
+  contextEntries?: SubtitleEntry[];
+  reasonsBySequence?: Record<number, string[]>;
+  sourceLanguage: string;
+  targetLanguage: string;
+  arabicDialect?: ArabicDialect;
+  preferences: TranslationPreferencesConfig;
+  contextProfile?: GlobalContextProfile;
+  glossary: GlossaryItem[];
+  aiAdapter: AIProviderAdapter;
+}): Promise<{
+  revisions: Array<{
+    sequence: number;
+    revisedText: string;
+    reason: string;
+    changed: boolean;
+    previousClean: string;
+    nextClean: string;
+  }>;
+}> {
+  const {
+    targetEntries,
+    contextEntries = [],
+    reasonsBySequence = {},
+    sourceLanguage,
+    targetLanguage,
+    arabicDialect,
+    preferences,
+    contextProfile,
+    glossary,
+    aiAdapter,
+  } = params;
+
+  const isArabic = targetLanguage.toLowerCase() === 'ar';
+  const allEntriesMap = new Map<number, SubtitleEntry>();
+  for (const e of contextEntries) {
+    allEntriesMap.set(e.sequence, e);
+  }
+  for (const e of targetEntries) {
+    allEntriesMap.set(e.sequence, e);
+  }
+
+  const prompts = buildProofreadBatchPrompts({
+    targetEntries,
+    allEntriesMap,
+    reasonsBySequence,
+    sourceLanguage,
+    targetLanguage,
+    arabicDialect,
+    preferences,
+    contextProfile,
+    glossary,
+  });
+
+  const { data: batchResponse } = await aiAdapter.generateStructured(
+    {
+      systemPrompt: prompts.systemPrompt,
+      userPrompt: prompts.userPrompt,
+      temperature: 0.15,
+    },
+    ProofreadBatchResponseSchema
+  );
+
+  const correctionsBySeq = new Map<
+    number,
+    { revisedText: string; reason: string }
+  >();
+  for (const item of batchResponse.corrections) {
+    if (
+      !isNaN(item.sequence) &&
+      item.revisedText &&
+      item.revisedText.trim().length > 0
+    ) {
+      correctionsBySeq.set(item.sequence, {
+        revisedText: item.revisedText.trim(),
+        reason: item.reason || 'تدقيق لغوي ونحوي',
+      });
+    }
+  }
+
+  const revisions: Array<{
+    sequence: number;
+    revisedText: string;
+    reason: string;
+    changed: boolean;
+    previousClean: string;
+    nextClean: string;
+  }> = [];
+
+  for (const entry of targetEntries) {
+    const candidate = correctionsBySeq.get(entry.sequence);
+    if (!candidate) continue;
+
+    const rawRevised = stripBidiControlChars(candidate.revisedText).trim();
+    if (!rawRevised) continue;
+
+    if (isArabic && !/[\u0600-\u06FF]/.test(rawRevised)) {
+      continue;
+    }
+
+    const normalizedRevised = isArabic
+      ? normalizeArabicSubtitleText(rawRevised, entry.originalText)
+      : preserveOuterFormattingTags(rawRevised, entry.originalText);
+
+    const prevClean = stripBidiControlChars(entry.translatedText || '').trim();
+    const nextClean = stripBidiControlChars(normalizedRevised).trim();
+
+    if (nextClean) {
+      revisions.push({
+        sequence: entry.sequence,
+        revisedText: normalizedRevised,
+        reason: candidate.reason,
+        changed: nextClean !== prevClean,
+        previousClean: prevClean,
+        nextClean,
+      });
+    }
+  }
+
+  return { revisions };
+}
