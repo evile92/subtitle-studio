@@ -974,28 +974,59 @@ export function SubtitleWorkspace({
                         </button>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">
-                        <div className="p-2 rounded-lg bg-rose-50/60 dark:bg-rose-950/25 border border-rose-200/60 dark:border-rose-900/50">
-                          <span className="block text-[10px] font-bold text-rose-600 dark:text-rose-400 mb-0.5">
-                            {t.workspace.proofread.beforeLabel}:
-                          </span>
-                          <p
-                            dir={isTargetRtl ? 'rtl' : 'ltr'}
-                            className="text-slate-700 dark:text-slate-300 line-through opacity-80"
-                          >
-                            {chg.previousTranslation}
-                          </p>
+                      <div
+                        dir="ltr"
+                        className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1.5 items-stretch"
+                      >
+                        {/* LEFT COLUMN: ORIGINAL ENGLISH SUBTITLE */}
+                        <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200/70 dark:border-slate-800 flex flex-col justify-between text-start">
+                          <div>
+                            <span className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                              {uiLang === 'ar'
+                                ? 'النص الأصلي (الإنجليزية)'
+                                : 'Original Subtitle (English)'}
+                            </span>
+                            <p
+                              dir={isSourceRtl ? 'rtl' : 'ltr'}
+                              className="text-slate-800 dark:text-slate-200 leading-relaxed text-xs sm:text-sm select-text"
+                            >
+                              {chg.originalText}
+                            </p>
+                          </div>
                         </div>
-                        <div className="p-2 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-900/50">
-                          <span className="block text-[10px] font-bold text-emerald-700 dark:text-emerald-400 mb-0.5">
-                            {t.workspace.proofread.afterLabel}:
-                          </span>
-                          <p
-                            dir={isTargetRtl ? 'rtl' : 'ltr'}
-                            className="font-semibold text-slate-900 dark:text-white"
-                          >
-                            {chg.revisedTranslation}
-                          </p>
+
+                        {/* RIGHT COLUMN: ARABIC REVISED & BEFORE */}
+                        <div
+                          dir={isTargetRtl ? 'rtl' : 'ltr'}
+                          className="space-y-2 flex flex-col justify-between text-start"
+                        >
+                          <div className="p-2.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/80">
+                            <span className="block text-[10px] font-bold text-emerald-700 dark:text-emerald-300 mb-1">
+                              {uiLang === 'ar'
+                                ? 'الترجمة المصححة (العربية)'
+                                : 'Corrected Translation (Arabic)'}
+                            </span>
+                            <p
+                              dir={isTargetRtl ? 'rtl' : 'ltr'}
+                              className="font-semibold text-slate-900 dark:text-white leading-relaxed text-xs sm:text-sm select-text"
+                            >
+                              {chg.revisedTranslation}
+                            </p>
+                          </div>
+
+                          <div className="p-2 rounded-lg bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200/50 dark:border-rose-900/40 text-[11px]">
+                            <span className="block text-[10px] font-bold text-rose-600 dark:text-rose-400 mb-0.5">
+                              {uiLang === 'ar'
+                                ? 'الترجمة قبل التدقيق:'
+                                : `${t.workspace.proofread.beforeLabel}:`}
+                            </span>
+                            <p
+                              dir={isTargetRtl ? 'rtl' : 'ltr'}
+                              className="text-slate-600 dark:text-slate-400 line-through opacity-80"
+                            >
+                              {chg.previousTranslation}
+                            </p>
+                          </div>
                         </div>
                       </div>
                     </div>
