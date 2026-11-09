@@ -7,7 +7,10 @@ import type {
   TranslationStyle,
 } from '@/types/subtitle';
 import { getLanguageName } from '@/lib/languages';
-import { buildArabicLinguisticInstructions } from './arabic-engine';
+import {
+  buildArabicLinguisticInstructions,
+  stripBidiControlChars,
+} from './arabic-engine';
 
 const STYLE_DESCRIPTIONS: Record<TranslationStyle, string> = {
   natural:
@@ -155,11 +158,12 @@ CRITICAL SRT FORMATTING & INTEGRITY RULES:
 ${contextSection}${glossarySection}${nuancesSection}${arabicSection}
 
 OUTPUT FORMAT:
-Return ONLY a valid JSON object with the following structure:
+Return ONLY a valid JSON object with the following structure (always fill "speakerToAddressee" BEFORE "translatedText" so verb/pronoun gender matches the exact speaker and addressee):
 {
   "translations": [
     {
       "sequence": <exact integer sequence number>,
+      "speakerToAddressee": "<Speaker(M/F) -> Addressee(M/F/Plural), e.g. 'Nikki(F) -> Bear(M)'>",
       "translatedText": "<localized subtitle text preserving any HTML/SRT formatting tags>"
     }
   ],
@@ -179,7 +183,9 @@ Return ONLY a valid JSON object with the following structure:
           .map(
             (e) =>
               `[#${e.sequence}] Original: ${JSON.stringify(e.originalText)}${
-                e.translatedText ? ` | Already Translated: ${JSON.stringify(e.translatedText)}` : ''
+                e.translatedText
+                  ? ` | Already Translated: ${JSON.stringify(stripBidiControlChars(e.translatedText))}`
+                  : ''
               }`
           )
           .join('\n') +
@@ -249,6 +255,7 @@ ${arabicSection}
 Return ONLY valid JSON:
 {
   "sequence": ${targetEntry.sequence},
+  "speakerToAddressee": "<Speaker(M/F) -> Addressee(M/F/Plural)>",
   "translatedText": "<natural localized subtitle text>",
   "alternatives": ["<alternative phrasing 1>", "<alternative phrasing 2>"],
   "reasoning": "<brief explanation of how context/tone was applied>"
@@ -258,7 +265,7 @@ Return ONLY valid JSON:
     .map(
       (e) =>
         `[#${e.sequence}] Original: ${JSON.stringify(e.originalText)} | Translated: ${JSON.stringify(
-          e.translatedText || ''
+          stripBidiControlChars(e.translatedText || '')
         )}`
     )
     .join('\n');
@@ -267,7 +274,7 @@ Return ONLY valid JSON:
     .map(
       (e) =>
         `[#${e.sequence}] Original: ${JSON.stringify(e.originalText)} | Translated: ${JSON.stringify(
-          e.translatedText || ''
+          stripBidiControlChars(e.translatedText || '')
         )}`
     )
     .join('\n');
@@ -279,7 +286,7 @@ ${beforeLines || '(Start of file)'}
 Sequence: #${targetEntry.sequence}
 Timestamp: ${targetEntry.startTime} --> ${targetEntry.endTime}
 Original Text: ${JSON.stringify(targetEntry.originalText)}
-Current Translation (to improve/replace): ${JSON.stringify(targetEntry.translatedText || '')}
+Current Translation (to improve/replace): ${JSON.stringify(stripBidiControlChars(targetEntry.translatedText || ''))}
 ${customInstruction ? `User Instruction for this line: ${customInstruction}` : 'Provide a more natural, contextually accurate translation that fits the surrounding dialogue.'}
 
 === FOLLOWING SCENE LINES ===

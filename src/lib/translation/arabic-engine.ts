@@ -107,29 +107,48 @@ Target Variety: ${dialectOption.nameEn} (${dialectOption.nativeLabel})
 1. VARIETY & REGISTER DIRECTIVE:
 ${dialectOption.promptGuidelines}
 
-2. NATURAL FILM DIALOGUE VS. MACHINE CALQUES:
-- You are an elite audiovisual subtitle translator for cinema and television, NOT a literal word-for-word machine translator.
-- Write lines that sound natural when spoken aloud by a real person in the scene's emotional state.
-- STRICTLY FORBIDDEN literal calques (الترجمة الحرفية الركيكة):
-  * Never translate "It takes place" as "يأخذ مكان" -> use "تدور أحداثه / يجري".
-  * Never translate "Make sense" as "يصنع معنى" -> use "هذا منطقي / كلام معقول".
-  * Never translate "Piece of cake" as "قطعة من الكعكة" -> use "أمر في غاية السهولة / ولا أسهل".
-  * Never translate "Are you kidding me?" as "هل تقوم بممازحتي؟" -> use "أتمزح معي؟" (MSA) or the selected dialect equivalent.
-  * Never overuse "تم + المصدر" or "من قِبل" for passive voice when active Arabic verb forms or natural passive (المبني للمجهول) are much cleaner.
-  * Avoid stiff redundant pronouns ("أنا أعتقد أنني سوف أذهب" -> "أظنني سأذهب" or "أعتقد أني ذاهب").
+2. SPEAKER & ADDRESSEE GENDER RESOLUTION (CRITICAL):
+- Before translating ANY line, determine: (A) WHO is speaking (Speaker Gender) and (B) WHOM they are addressing (Addressee Gender).
+- VOCATIVE INVERSION RULE (قاعدة المنادى وعكس المخاطب):
+  * If Line A says "We have to take space from each other, Nikki!" or "I just want you to be Nikki", the person named ("Nikki", female) is the ADDRESSEE of Line A.
+  * Therefore, when Nikki replies in the next turn ("- Just tell me what I can do." / "I'll be anything you want me to be."), she is speaking TO the other person (e.g. a male character).
+  * NEVER blindly copy the gender of a name mentioned in a nearby line onto the addressee of the reply! If a female character replies to a male character, she MUST use masculine addressee forms ("فقط أخبرني بما يمكنني فعله" / "سأكون أي شيء تريدني أن أكونه"), NEVER feminine ("أخبريني" / "تريدينني").
+- DUAL-SPEAKER DASH ("- ") TURN ALTERNATION:
+  * When a single subtitle entry contains two speaker turns separated by "- ", they are TWO DIFFERENT speakers talking to each other. Track who speaks first and who replies so each half has the exact right speaker and addressee gender.
 
-3. GRAMMATICAL & MORPHOLOGICAL PRECISION:
+3. IDIOMS, SLANG, SUBTEXT & INTENDED MEANING (NO LITERAL TRANSLATION):
+- You are an elite cinema subtitler. Translate the SPEAKER'S INTENDED MEANING and emotional subtext, NEVER word-for-word dictionary glosses:
+  * Workplace idioms: "I'm putting in my two weeks" means giving a 2-week resignation notice TODAY ("سأبلغهم بأنني سأترك العمل بعد أسبوعين" / "سأقدم إشعار استقالتي لمدة أسبوعين"), NOT "سأقدم استقالتي بعد أسبوعين" (which falsely means waiting two weeks before resigning).
+  * Intoxication & state slang: "Wasted" (for a person at a party/drinking) means heavily drunk/intoxicated ("ثملة جداً / منتشية بشدة" or "ثمل جداً"), NOT "فاقدة للوعي" (unconscious/passed out, unless they literally fainted).
+  * Social/playful verbs: "Tease her/him" in banter means playful joking ("مازحها / شاكسها"), NOT physical/sensual "داعبها".
+  * Medical/colloquial precision: "Did you have a seizure or something?" -> "هل أصابتك نوبة صرع أو شيء من هذا القبيل؟", not vague "نوبة أو شيء".
+  * Relationship & physical subtext: "Hooking up (on and off)" — check the surrounding dialogue! When contrasted with emotional dating (e.g., "not emotionally involved"), it refers to a casual/physical fling ("يدخلان في علاقة عابرة من حين إلى آخر"), NOT formal romantic dating ("يتواعدان"). Never sanitize or alter relationship subtext in a way that contradicts the next line of dialogue.
+
+4. STRICTLY FORBIDDEN LITERAL CALQUES (الترجمة الحرفية الركيكة الممنوعة):
+- NEVER produce awkward English-to-Arabic calques:
+  * "I super promise" -> NEVER translate as "أعدك بشدة". Use natural Arabic: "أعدك حقاً / أعدك صدقاً".
+  * "...makes up for that shit" -> When "shit" refers to bad food/things/situations, NEVER translate it literally as "تشفع لهذا اللعين". Translate the meaning naturally: "لكن الزبدة تعوّض ذلك (السوء)".
+  * "What the fuck/hell is going on?" -> NEVER use unnatural calques like "ما اللعنة التي تحدث؟". Use natural Arabic: "ما الذي يحدث بحق الجحيم؟ / ما هذا الذي يجري؟".
+  * "Causing/starting drama" -> NEVER translate as "إثارة الدراما". Use natural Arabic: "إثارة المشاكل / إشعال الفتنة / افتعال الأزمات".
+  * "With this energy" (when referring to someone's attitude/behavior) -> Translate as "بهذا الأسلوب / بهذه الطريقة في التعامل", NOT literal "بهذه الطاقة".
+  * "It takes place" -> "تدور أحداثه / يجري" (NEVER "يأخذ مكان").
+  * "Make sense" -> "هذا منطقي / كلام معقول" (NEVER "يصنع معنى").
+  * "Piece of cake" -> "أمر في غاية السهولة / ولا أسهل" (NEVER "قطعة من الكعكة").
+  * "Are you kidding me?" -> "أتمزح معي؟" (NEVER "هل تقوم بممازحتي؟").
+  * Avoid stiff redundant pronouns ("أنا أعتقد أنني سوف أذهب" -> "أظنني سأذهب" or "أعتقد أني ذاهب") and avoid overusing "تم + المصدر" or "من قِبل".
+
+5. GRAMMATICAL & MORPHOLOGICAL PRECISION:
 - Gender Agreement (التذكير والتأنيث): Check WHO is speaking and WHOM they are addressing in every single subtitle line. Conjugate verbs, adjectives, and second-person pronouns (أنتَ/أنتِ، لكَ/لكِ) accurately.
 - Number Agreement (المفرد والمثنى والجمع): Use the Arabic dual form (المثنى: كلاكما، أنتما، ذهبا) when addressing or referring to exactly two people.
 - Natural Arabic Punctuation: Use Arabic comma (،), Arabic question mark (؟), and Arabic semicolon (؛). Do not add unnecessary tashkeel/diacritics except occasional disambiguating tanwin fatha (مثل: حقاً، طبعاً، شكراً، أبداً).
 
-4. CHARACTER GENDER & VOICE MAP:
+6. CHARACTER GENDER & VOICE MAP:
 ${characterGenderGuide}
 
-5. MANDATORY TERMINOLOGY & NAME GLOSSARY:
+7. MANDATORY TERMINOLOGY & NAME GLOSSARY:
 ${glossaryGuide}
 
-6. SUBTITLE READABILITY & PACING:
+8. SUBTITLE READABILITY & PACING:
 - Keep lines concise and impactful for screen reading without omitting any meaningful nuance.
 - Preserve sarcasm, irony, humor, emotional intensity, and rhetorical questions faithfully.
 ${

@@ -476,12 +476,15 @@ export function SubtitleWorkspace({
         if (batchSlice.length === 0) continue;
 
         const contextEntries: SubtitleEntry[] = [];
-        const batchSeqSet = new Set(batchSlice.map((e) => e.sequence));
+        const includedContextSeqs = new Set(batchSlice.map((e) => e.sequence));
         for (const item of batchSlice) {
-          const prev = entriesBySeq.get(item.sequence - 1);
-          const next = entriesBySeq.get(item.sequence + 1);
-          if (prev && !batchSeqSet.has(prev.sequence)) contextEntries.push(prev);
-          if (next && !batchSeqSet.has(next.sequence)) contextEntries.push(next);
+          for (const offset of [-2, -1, 1, 2]) {
+            const neighbor = entriesBySeq.get(item.sequence + offset);
+            if (neighbor && !includedContextSeqs.has(neighbor.sequence)) {
+              contextEntries.push(neighbor);
+              includedContextSeqs.add(neighbor.sequence);
+            }
+          }
         }
 
         const res = await fetch('/api/pipeline/proofread-batch', {

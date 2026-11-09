@@ -18,24 +18,20 @@ import {
   preserveOuterFormattingTags,
   stripBidiControlChars,
 } from './arabic-engine';
+import {
+  detectEntriesNeedingProofread,
+  extractResidualLatinWords,
+  type ProofreadChangeItem,
+  type ProofreadResultSummary,
+} from './proofread-utils';
 import { validateAndRepairTranslations } from './validator';
 
-export interface ProofreadChangeItem {
-  sequence: number;
-  originalText: string;
-  previousTranslation: string;
-  revisedTranslation: string;
-  reason: string;
-}
-
-export interface ProofreadResultSummary {
-  scopeUsed: 'smart' | 'all';
-  totalEntriesInJob: number;
-  reviewedCount: number;
-  correctedCount: number;
-  remainingEnglishCount: number;
-  changes: ProofreadChangeItem[];
-}
+export {
+  detectEntriesNeedingProofread,
+  extractResidualLatinWords,
+  type ProofreadChangeItem,
+  type ProofreadResultSummary,
+};
 
 function coerceSequenceInt(val: unknown): number {
   if (typeof val === 'number' && !isNaN(val)) return val;
@@ -95,100 +91,6 @@ const ProofreadBatchResponseSchema = z.preprocess((raw) => {
   corrections: z.array(ProofreadEntrySchema),
 }));
 
-/**
- * Strips formatting tags (`<i>`, `<b>`, `{\an8}`) and invisible BiDi characters
- * and checks if any 2+ letter Latin/English words remain in the translated text.
- */
-export function extractResidualLatinWords(text: string): string[] {
-  if (!text) return [];
-  const clean = stripFormattingTags(stripBidiControlChars(text));
-  return clean.match(/[A-Za-z]{2,}/g) || [];
-}
-
-/**
- * Scans all subtitle entries in a job to identify lines that have:
- * 1. Leftover English/Latin words inside an Arabic (or non-Latin) translation
- * 2. Untranslated or empty translations
- * 3. Active QA warnings
- * 4. Common grammatical/orthographic red flags (duplicate consecutive words, literal machine calques, broken brackets)
- */
-export function detectEntriesNeedingProofread(
-  entries: SubtitleEntry[],
-  targetLanguage: string
-): {
-  sequences: number[];
-  reasonsBySequence: Record<number, string[]>;
-} {
-  const isArabic = targetLanguage.toLowerCase() === 'ar';
-  const sequences: number[] = [];
-  const reasonsBySequence: Record<number, string[]> = {};
-
-  for (const entry of entries) {
-    if (entry.isSoundEffect) continue;
-
-    const reasons: string[] = [];
-    const rawTrans = stripBidiControlChars(entry.translatedText || '').trim();
-    const cleanTrans = stripFormattingTags(rawTrans).trim();
-    const cleanOrig = stripFormattingTags(entry.originalText || '').trim();
-
-    if (!cleanTrans) {
-      reasons.push('Empty translation');
-    } else {
-      // 1. Check for identical untranslated text
-      if (
-        cleanOrig.length > 3 &&
-        cleanTrans.toLowerCase() === cleanOrig.toLowerCase() &&
-        /[A-Za-z]{3,}/.test(cleanOrig)
-      ) {
-        reasons.push('Line left untranslated in source language');
-      }
-
-      // 2. Check for leftover English/Latin words inside Arabic translation
-      if (isArabic) {
-        const latinWords = extractResidualLatinWords(rawTrans);
-        if (latinWords.length > 0) {
-          reasons.push(
-            `Contains leftover English word(s): ${latinWords.slice(0, 4).join(', ')}`
-          );
-        }
-
-        // 3. Check for duplicate consecutive Arabic words (e.g. "في في", "من من", "هذا هذا")
-        if (/\b([\u0600-\u06FF]{2,})\s+\1\b/.test(cleanTrans)) {
-          reasons.push('Duplicate consecutive word detected');
-        }
-
-        // 4. Check for awkward literal machine calques or common spelling errors
-        if (
-          /(يأخذ مكان|يصنع معنى|قطعة من الكعكة|هل تقوم بممازحتي|انشاء الله)/.test(
-            cleanTrans
-          )
-        ) {
-          reasons.push('Contains literal calque or common spelling error');
-        }
-      }
-    }
-
-    // 5. Include any entry flagged by the 11-point QA validator
-    if (
-      (entry.warnings && entry.warnings.length > 0) ||
-      entry.status === 'warning'
-    ) {
-      for (const w of entry.warnings || []) {
-        if (!reasons.includes(w)) {
-          reasons.push(w);
-        }
-      }
-    }
-
-    if (reasons.length > 0) {
-      sequences.push(entry.sequence);
-      reasonsBySequence[entry.sequence] = reasons;
-    }
-  }
-
-  return { sequences, reasonsBySequence };
-}
-
 function buildProofreadBatchPrompts(params: {
   targetEntries: SubtitleEntry[];
   allEntriesMap: Map<number, SubtitleEntry>;
@@ -230,35 +132,48 @@ function buildProofreadBatchPrompts(params: {
     glossary.length > 0
       ? `\n=== MANDATORY GLOSSARY (CHARACTER NAMES & TERMS) ===\n` +
         glossary
-          .map((g) => `- "${g.sourceTerm}" => "${g.targetTerm}" (${g.category})`)
+          .map((g) => `- "${g.sourceTerm}" => "${g.targetTerm}" (${g.category}${g.gender ? `, gender: ${g.gender}` : ''})`)
           .join('\n')
       : '';
 
   const systemPrompt = `You are an Elite Chief Audiovisual Subtitle Proofreader, Grammarian, and Localization Editor reviewing subtitles translated from ${sourceLangName} into ${targetLangName}.
 
-YOUR MISSION (SECOND-PASS LINGUISTIC & QUALITY VERIFICATION):
-Carefully inspect each subtitle entry's "originalText" and "currentTranslation" (along with its surrounding dialogue context and detected issues) and produce a polished, error-free "revisedText".
+YOUR MISSION (SECOND-PASS CONTEXTUAL, GENDER & IDIOM QUALITY AUDIT):
+Carefully inspect each subtitle entry's "originalText" and "currentTranslation" (along with its -2..+2 surrounding dialogue context and detected issues) and produce a polished, contextually accurate "revisedText".
 
 STRICT PROOFREADING & CORRECTION RULES:
-1. ELIMINATE ALL LEFTOVER ENGLISH / FOREIGN WORDS:
-   - If ${targetLangName} is Arabic (or another target language), NO untranslated English words, phrases, or names may remain in "revisedText" (except valid HTML/SRT formatting tags like <i>, </i>, <b>, </b>, <u>, </u>, {\\an8}).
-   - Translate any leftover English words accurately according to the context, or transliterate proper names into Arabic script consistently with the Glossary.
-2. FIX SPELLING, ORTHOGRAPHIC & GRAMMATICAL ERRORS:
-   - In Arabic: Fix hamza errors (همزة القطع والوصل: أ / إ / آ / ا), taa marbuta vs haa (ة / ه), alif maqsura vs yaa (ى / ي), verb/adjective gender agreement (التذكير والتأنيث حسب المتحدث والمخاطب), dual/plural agreement (المثنى والجمع), and typos (مثل تصحيح "انشاء الله" إلى "إن شاء الله").
-3. FIX AWKWARD LITERAL PHRASING:
-   - Replace stiff word-for-word machine calques with natural, fluent spoken cinema dialogue while keeping 100% of the original meaning and emotional tone.
-4. PRESERVE FORMATTING TAGS & STRUCTURE 100%:
+1. AUDIT SPEAKER & ADDRESSEE GENDER AGREEMENT (التذكير والتأنيث للمتحدث والمخاطب):
+   - Check the surrounding dialogue context (-2, -1, +1, +2) to see WHO is speaking and WHOM they are addressing.
+   - VOCATIVE INVERSION CHECK: If the previous line says e.g. "We have to take space from each other, Nikki!" or "I just want you to be Nikki", the named person ("Nikki", female) is the ADDRESSEE of that line. Therefore, when Nikki replies in the current line ("Just tell me what I can do" / "I'll be anything you want me to be"), she is addressing the MALE speaker! Fix feminine addressee errors like "أخبريني" -> "أخبرني" and "تريدينني" -> "تريدني".
+2. FIX LITERAL IDIOM MISTRANSLATIONS & RELATIONSHIP SUBTEXT:
+   - Fix idioms translated word-for-word instead of by intended meaning:
+     * "I'm putting in my two weeks" -> "سأبلغهم بأنني سأترك العمل بعد أسبوعين" (NOT "سأقدم استقالتي بعد أسبوعين").
+     * "Wasted" (drunk/intoxicated) -> "ثملة جداً / منتشية بشدة" or "ثمل جداً" (NOT "فاقدة للوعي" unless literally unconscious).
+     * "Tease her/him" (playful banter) -> "مازحها / مازحه" (NOT sensual "داعبها").
+     * "Did you have a seizure or something?" -> "هل أصابتك نوبة صرع أو شيء من هذا القبيل؟".
+     * "Hooking up (on and off)" -> When followed by context indicating it is non-emotional/casual, translate accurately as "يدخلان في علاقة عابرة من حين إلى آخر" (NOT formal romantic "يتواعدان").
+3. REPLACE AWKWARD LITERAL ENGLISH CALQUES WITH NATURAL ARABIC:
+   - "I super promise" -> "أعدك حقاً" (NEVER "أعدك بشدة").
+   - "But the butter makes up for that shit" -> "لكن الزبدة تعوّض ذلك" (NEVER "الزبدة تشفع لهذا اللعين").
+   - "What the fuck/hell is going on?" -> "ما الذي يحدث بحق الجحيم؟ / ما هذا الذي يجري؟" (NEVER "ما اللعنة التي تحدث؟").
+   - "Causing/starting drama" -> "إثارة المشاكل / إشعال المشاكل" (NEVER "إثارة الدراما").
+   - "With this energy" (referring to attitude/behavior) -> "بهذا الأسلوب / بهذه الطريقة في التعامل" (NEVER "بهذه الطاقة").
+4. ELIMINATE ALL LEFTOVER ENGLISH / FOREIGN WORDS & FIX SPELLING:
+   - No untranslated English words may remain in "revisedText" (except valid HTML/SRT formatting tags like <i>, </i>, <b>, </b>, <u>, </u>, {\\an8}).
+   - Fix hamza errors (همزة القطع والوصل), taa marbuta vs haa, alif maqsura vs yaa, dual/plural agreement, and typos ("انشاء الله" -> "إن شاء الله").
+5. PRESERVE FORMATTING TAGS & STRUCTURE 100%:
    - Keep all inline tags (<i>...</i>, <b>...</b>, <u>...</u>, {\\an8}, ♪) intact.
    - Never merge or split subtitle entries, and never include timestamps or sequence numbers inside "revisedText".
-   - If an entry's "currentTranslation" is already 100% accurate, grammatical, and contains no leftover foreign words, return it unchanged in "revisedText".
+   - If an entry's "currentTranslation" is already 100% accurate, natural, and gender-correct in context, return it unchanged in "revisedText".
 ${glossarySection}${arabicSection}
 
 OUTPUT FORMAT:
-Return ONLY a valid JSON object with the exact structure:
+Return ONLY a valid JSON object with the exact structure (fill "speakerToAddressee" first to verify gender agreement):
 {
   "corrections": [
     {
       "sequence": <exact integer sequence number>,
+      "speakerToAddressee": "<Speaker(M/F) -> Addressee(M/F/Plural)>",
       "revisedText": "<corrected and polished subtitle text in ${targetLangName}>",
       "reason": "<brief 4-10 word description in Arabic of what was fixed, or 'سليم لغوياً' if unchanged>"
     }
@@ -266,29 +181,36 @@ Return ONLY a valid JSON object with the exact structure:
 }`;
 
   const payload = targetEntries.map((entry) => {
-    const prevEntry = allEntriesMap.get(entry.sequence - 1);
-    const nextEntry = allEntriesMap.get(entry.sequence + 1);
+    const prev2 = allEntriesMap.get(entry.sequence - 2);
+    const prev1 = allEntriesMap.get(entry.sequence - 1);
+    const next1 = allEntriesMap.get(entry.sequence + 1);
+    const next2 = allEntriesMap.get(entry.sequence + 2);
+
+    const precedingLines = [prev2, prev1]
+      .filter((e): e is SubtitleEntry => Boolean(e))
+      .map((e) => `[#${e.sequence}] ${e.originalText} -> ${stripBidiControlChars(e.translatedText || '')}`);
+
+    const followingLines = [next1, next2]
+      .filter((e): e is SubtitleEntry => Boolean(e))
+      .map((e) => `[#${e.sequence}] ${e.originalText} -> ${stripBidiControlChars(e.translatedText || '')}`);
+
     return {
       sequence: entry.sequence,
       speaker: entry.speakerLabel || undefined,
-      precedingLineContext: prevEntry
-        ? `[#${prevEntry.sequence}] ${prevEntry.originalText} -> ${stripBidiControlChars(prevEntry.translatedText || '')}`
-        : undefined,
+      precedingDialogueContext: precedingLines.length > 0 ? precedingLines : undefined,
       originalText: entry.originalText,
       currentTranslation: stripBidiControlChars(entry.translatedText || ''),
       detectedIssues: reasonsBySequence[entry.sequence] || [
-        'Verify spelling, grammar, gender agreement, and natural phrasing',
+        'Audit speaker/addressee gender, idioms/subtext, literal calques, and Arabic fluency',
       ],
-      followingLineContext: nextEntry
-        ? `[#${nextEntry.sequence}] ${nextEntry.originalText} -> ${stripBidiControlChars(nextEntry.translatedText || '')}`
-        : undefined,
+      followingDialogueContext: followingLines.length > 0 ? followingLines : undefined,
     };
   });
 
   const userPrompt = `=== SUBTITLE ENTRIES FOR SECOND-PASS PROOFREADING & CORRECTION (${targetEntries.length} entries) ===
 ${JSON.stringify(payload, null, 2)}
 
-Review all ${targetEntries.length} entries above. Fix any leftover English words, spelling mistakes, grammatical errors, or awkward phrasing, and return the JSON object with "corrections".`;
+Review all ${targetEntries.length} entries above against their surrounding dialogue context. Fix any speaker/addressee gender reversals, literal idiom mistranslations, awkward calques, leftover English words, or grammatical errors, and return the JSON object with "corrections".`;
 
   return { systemPrompt, userPrompt };
 }

@@ -83,16 +83,33 @@ export function detectEntriesNeedingProofread(
 
         // 4. Check for awkward literal machine calques or common spelling errors
         if (
-          /(يأخذ مكان|يصنع معنى|قطعة من الكعكة|هل تقوم بممازحتي|انشاء الله)/.test(
+          /(يأخذ مكان|يصنع معنى|قطعة من الكعكة|هل تقوم بممازحتي|انشاء الله|ما اللعنة|بحق اللعنة|إثارة الدراما|تثير الدراما|أعدك بشدة|بهذه الطاقة|هذا اللعين|تلك اللعينة|تشفع لهذا|سأقدم استقالتي بعد أسبوعين)/.test(
             cleanTrans
           )
         ) {
-          reasons.push('Contains literal calque or common spelling error');
+          reasons.push('Contains literal calque or unnatural Arabic phrasing');
+        }
+
+        // 5. Check for high-risk English idioms/slang that are frequently mistranslated literally
+        if (
+          /\b(putting in my two weeks|two weeks'?\s*notice|wasted|hooking up|hooked up|hook up|tease her|tease him|makes up for that shit|seizure|super promise)\b/i.test(
+            cleanOrig
+          )
+        ) {
+          reasons.push('Contains colloquial idiom/slang requiring contextual subtext verification');
+        }
+
+        // 6. Check for dual-speaker turn switches ("- ") or direct second-person address prone to speaker/addressee gender reversal
+        if (
+          (cleanOrig.includes('- ') && /\b(tell me|you want|can I do|with me)\b/i.test(cleanOrig)) ||
+          /(أخبريني|تريدينني)/.test(cleanTrans)
+        ) {
+          reasons.push('Verify speaker-to-addressee gender agreement (التذكير والتأنيث للمخاطب)');
         }
       }
     }
 
-    // 5. Include any entry flagged by the 11-point QA validator
+    // 7. Include any entry flagged by the 11-point QA validator
     if (
       (entry.warnings && entry.warnings.length > 0) ||
       entry.status === 'warning'

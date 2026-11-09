@@ -144,50 +144,141 @@ export default function HomePage() {
           : job.sourceLanguage;
 
       // STAGE 3: Global Storyline & Glossary Context Analysis (12% -> 25%)
+      // Uses sequential 350-entry segment passes + synthesis so 100% of long films are analyzed
+      // without hitting serverless execution timeouts.
       if (!job.contextProfile) {
-        job.progressPercent = 14;
+        const ANALYSIS_SEGMENT_SIZE = 350;
+        const segments: SubtitleEntry[][] = [];
+        for (let i = 0; i < job.entries.length; i += ANALYSIS_SEGMENT_SIZE) {
+          segments.push(job.entries.slice(i, i + ANALYSIS_SEGMENT_SIZE));
+        }
+
+        job.progressPercent = 13;
         appendClientJobLog(
           job,
           'analyzing_storyline',
-          `Starting full-file contextual storyline analysis across all ${job.totalEntries} subtitle entries...`,
+          `Starting full-file contextual storyline analysis across all ${job.totalEntries} subtitle entries (${segments.length} pass${segments.length > 1 ? 'es' : ''})...`,
           'info'
         );
         saveClientJob(job);
         setActiveJob({ ...job });
 
-        const analyzeRes = await fetch('/api/pipeline/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            entries: job.entries,
-            sourceLanguage: effectiveSourceLang,
-            targetLanguage: job.targetLanguage,
-            arabicDialect: job.arabicDialect,
-            preferences: job.preferences,
-            userAIConfig,
-          }),
-        });
+        const partialAnalyses: unknown[] = [];
+        let previousStoryline = '';
+        let previousCharactersSummary = '';
+        let finalAnalyzeData: {
+          contextProfile?: TranslationJob['contextProfile'];
+          glossary?: TranslationJob['glossary'];
+          detectedSourceLanguage?: string;
+          provider?: TranslationJob['aiProviderUsed'];
+          model?: string;
+        } = {};
 
-        const analyzeData = await analyzeRes.json().catch(() => ({}));
-        if (!analyzeRes.ok) {
-          throw new Error(
-            analyzeData.error || 'Failed to analyze subtitle storyline context.'
+        for (let sIdx = 0; sIdx < segments.length; sIdx++) {
+          const seg = segments[sIdx];
+          const firstSeq = seg[0]?.sequence ?? 1;
+          const lastSeq = seg[seg.length - 1]?.sequence ?? seg.length;
+
+          if (segments.length > 1) {
+            job.progressPercent = 13 + Math.round(((sIdx + 0.5) / (segments.length + 1)) * 10);
+            appendClientJobLog(
+              job,
+              'analyzing_storyline',
+              `Analyzing script segment ${sIdx + 1} of ${segments.length} (entries #${firstSeq}–#${lastSeq})...`,
+              'info'
+            );
+            saveClientJob(job);
+            setActiveJob({ ...job });
+          }
+
+          const segRes = await fetch('/api/pipeline/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mode: 'segment',
+              segmentEntries: seg,
+              segmentIndex: sIdx,
+              totalSegments: segments.length,
+              totalEntriesInFile: job.totalEntries,
+              previousStoryline: previousStoryline || undefined,
+              previousCharactersSummary: previousCharactersSummary || undefined,
+              sourceLanguage: effectiveSourceLang,
+              targetLanguage: job.targetLanguage,
+              arabicDialect: job.arabicDialect,
+              preferences: job.preferences,
+              userAIConfig,
+            }),
+          });
+
+          const segData = await segRes.json().catch(() => ({}));
+          if (!segRes.ok) {
+            throw new Error(
+              segData.error || `Failed to analyze script segment ${sIdx + 1} of ${segments.length}.`
+            );
+          }
+
+          partialAnalyses.push(segData.partialAnalysis);
+          finalAnalyzeData = segData;
+
+          if (segData.contextProfile?.subjectAndStoryline) {
+            previousStoryline = segData.contextProfile.subjectAndStoryline;
+          }
+          if (Array.isArray(segData.contextProfile?.characters)) {
+            previousCharactersSummary = segData.contextProfile.characters
+              .map((c: { name: string; gender: string; translatedName: string }) => `${c.name} (${c.gender}): ${c.translatedName}`)
+              .slice(0, 30)
+              .join(', ');
+          }
+        }
+
+        if (segments.length > 1) {
+          job.progressPercent = 23;
+          appendClientJobLog(
+            job,
+            'analyzing_storyline',
+            `Synthesizing master Context Profile & Glossary across all ${job.totalEntries} analyzed entries...`,
+            'info'
           );
+          saveClientJob(job);
+          setActiveJob({ ...job });
+
+          const synthRes = await fetch('/api/pipeline/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mode: 'synthesize',
+              partialAnalyses,
+              totalEntriesInFile: job.totalEntries,
+              sourceLanguage: effectiveSourceLang,
+              targetLanguage: job.targetLanguage,
+              arabicDialect: job.arabicDialect,
+              preferences: job.preferences,
+              userAIConfig,
+            }),
+          });
+
+          const synthData = await synthRes.json().catch(() => ({}));
+          if (!synthRes.ok) {
+            throw new Error(
+              synthData.error || 'Failed to synthesize full-file context profile.'
+            );
+          }
+          finalAnalyzeData = synthData;
         }
 
-        job.contextProfile = analyzeData.contextProfile;
-        job.aiProviderUsed = analyzeData.provider;
-        job.aiModelUsed = analyzeData.model;
+        job.contextProfile = finalAnalyzeData.contextProfile;
+        job.aiProviderUsed = finalAnalyzeData.provider;
+        job.aiModelUsed = finalAnalyzeData.model;
 
-        if (analyzeData.detectedSourceLanguage && job.sourceLanguage === 'auto') {
-          job.detectedSourceLanguage = analyzeData.detectedSourceLanguage;
+        if (finalAnalyzeData.detectedSourceLanguage && job.sourceLanguage === 'auto') {
+          job.detectedSourceLanguage = finalAnalyzeData.detectedSourceLanguage;
         }
 
-        if (Array.isArray(analyzeData.glossary)) {
+        if (Array.isArray(finalAnalyzeData.glossary)) {
           const existingKeys = new Set(
             job.glossary.map((g) => g.sourceTerm.toLowerCase())
           );
-          for (const item of analyzeData.glossary) {
+          for (const item of finalAnalyzeData.glossary) {
             if (
               item.sourceTerm &&
               item.targetTerm &&
@@ -203,7 +294,7 @@ export default function HomePage() {
         appendClientJobLog(
           job,
           'analyzing_storyline',
-          `Completed storyline analysis (${job.totalEntries}/${job.totalEntries} entries covered). Identified ${
+          `Completed 100% full-script storyline analysis (${job.totalEntries}/${job.totalEntries} entries covered across ${segments.length} segment${segments.length > 1 ? 's' : ''}). Identified ${
             job.contextProfile?.characters.length || 0
           } characters and ${job.glossary.length} glossary terms.`,
           'success'

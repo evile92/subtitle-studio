@@ -9,7 +9,7 @@ import type {
 import type { AIProviderAdapter } from '@/lib/ai/types';
 import { getArabicDialectOption, getLanguageName } from '@/lib/languages';
 
-const MAX_ENTRIES_PER_ANALYSIS_PASS = 350;
+export const MAX_ENTRIES_PER_ANALYSIS_PASS = 350;
 
 /**
  * Helper to coerce sequence numbers from numbers or strings like "#4", "4", "4, 5" into number[]
@@ -234,7 +234,7 @@ const ContextAnalysisResponseSchema = z.object({
   ),
 });
 
-type ContextAnalysisResponse = z.infer<typeof ContextAnalysisResponseSchema>;
+export type ContextAnalysisResponse = z.infer<typeof ContextAnalysisResponseSchema>;
 
 function formatTranscriptSegment(entries: SubtitleEntry[]): string {
   return entries
@@ -244,6 +244,274 @@ function formatTranscriptSegment(entries: SubtitleEntry[]): string {
       return `[#${e.sequence} @ ${compactTime}] ${speakerPrefix}${e.cleanText.replace(/\r?\n/g, ' / ')}`;
     })
     .join('\n');
+}
+
+function buildAnalysisSystemPrompt(params: {
+  sourceLanguage: string;
+  targetLanguage: string;
+  arabicDialect?: ArabicDialect;
+  preferences: TranslationPreferencesConfig;
+}): { systemPrompt: string; targetLangName: string; dialectInfo: ReturnType<typeof getArabicDialectOption> | null } {
+  const { sourceLanguage, targetLanguage, arabicDialect = 'msa', preferences } = params;
+  const targetLangName = getLanguageName(targetLanguage, 'en');
+  const sourceLangName =
+    sourceLanguage === 'auto' ? 'Auto-detected original language' : getLanguageName(sourceLanguage, 'en');
+  const isArabicTarget = targetLanguage.toLowerCase() === 'ar';
+  const dialectInfo = isArabicTarget ? getArabicDialectOption(arabicDialect) : null;
+
+  const systemPrompt = `You are a Chief Audiovisual Script Analyst and Localization Director.
+Your job is to read the subtitle script and produce a comprehensive JSON Global Context Profile and Persistent Translation Glossary before translation begins.
+
+Target Language: ${targetLangName}${dialectInfo ? ` (${dialectInfo.nameEn} - ${dialectInfo.nativeLabel})` : ''}
+Source Language: ${sourceLangName}
+Requested Style: ${preferences.style}
+
+CRITICAL EXTRACTION PRIORITIES:
+1. CHARACTER GENDERS & RELATIONSHIPS: Identify EVERY named or recurring character's exact gender ("male" or "female") and how they relate to others (romantic partners, casual/physical fling vs emotional dating, coworkers, family, rivals). This is vital for Arabic masculine/feminine verb and pronoun conjugation (التذكير والتأنيث).
+2. COLLOQUIAL IDIOMS, SLANG & SUBTEXT: Identify idioms, workplace expressions (e.g. "putting in my two weeks"), party/intoxication slang ("wasted"), relationship slang ("hooking up on and off"), playful banter ("tease her/him"), sarcasm, and double meanings along with their exact "sequenceNumbers" and natural ${targetLangName} translation strategy (never literal word-for-word calques).
+
+Respond ONLY with a valid JSON object matching this EXACT structure and key names:
+{
+  "detectedSourceLanguageCode": "en",
+  "subjectAndStoryline": "Detailed summary of the storyline, core conflict, and setting",
+  "narrativeContextAndGenre": "Genre, dramatic/comedic context, and tone",
+  "overallTone": "Emotional atmosphere and dialogue pacing",
+  "speechPatternsSummary": "Formal vs informal speech dynamics, register shifts, and character dynamics",
+  "plotDevelopments": ["Plot point 1", "Plot point 2"],
+  "arabicLocalizationGuidance": "Specific grammatical, speaker-to-addressee gender-agreement (تذكير وتأنيث), and subtext guidance",
+  "characters": [
+    {
+      "name": "Original name in script",
+      "translatedName": "Consistent localized name in ${targetLangName}",
+      "gender": "male | female | unknown | non-binary",
+      "role": "Character's role in the story",
+      "personalityAndTone": "Speaking style, temperament, vocabulary",
+      "formalityLevel": "formal | informal | mixed",
+      "relationships": "Exact relationship to other characters (and who they usually address)"
+    }
+  ],
+  "idiomsAndNuances": [
+    {
+      "sequenceNumbers": [4, 8],
+      "originalExpression": "Exact idiom, slang, joke, or sarcastic phrase from script",
+      "type": "idiom | sarcasm | joke | slang | cultural_reference | emotional_shift | rhetorical_question",
+      "intendedMeaning": "What the speaker actually means in context",
+      "recommendedTranslationStrategy": "Recommended natural localization in ${targetLangName}"
+    }
+  ],
+  "glossary": [
+    {
+      "sourceTerm": "Original name, place, organization, or recurring term",
+      "targetTerm": "Exact consistent translation in ${targetLangName}",
+      "category": "character | location | organization | terminology | idiom | recurring_phrase",
+      "gender": "male | female | neutral | plural",
+      "contextNotes": "Brief usage note"
+    }
+  ]
+}
+
+IMPORTANT:
+- "sequenceNumbers" inside "idiomsAndNuances" MUST be an array of plain integers (e.g. [4, 8]), NOT strings like ["#4"].
+- Each item in "glossary" MUST use the exact keys "sourceTerm" and "targetTerm".`;
+
+  return { systemPrompt, targetLangName, dialectInfo };
+}
+
+/**
+ * Deterministically merges characters, idioms/nuances, and glossary items from all segment
+ * analyses into the synthesized response so no segment-specific discovery is ever lost.
+ */
+function mergePartialAnalysesIntoSynthesized(
+  synthesized: ContextAnalysisResponse,
+  partials: ContextAnalysisResponse[]
+): ContextAnalysisResponse {
+  const charMap = new Map<string, ContextAnalysisResponse['characters'][number]>();
+  for (const c of synthesized.characters) {
+    if (c.name) charMap.set(c.name.trim().toLowerCase(), c);
+  }
+  for (const p of partials) {
+    for (const c of p.characters) {
+      if (!c.name) continue;
+      const key = c.name.trim().toLowerCase();
+      const existing = charMap.get(key);
+      if (!existing) {
+        charMap.set(key, c);
+      } else if (existing.gender === 'unknown' && (c.gender === 'male' || c.gender === 'female')) {
+        charMap.set(key, { ...existing, gender: c.gender });
+      }
+    }
+  }
+
+  const idiomMap = new Map<string, ContextAnalysisResponse['idiomsAndNuances'][number]>();
+  for (const item of [...synthesized.idiomsAndNuances, ...partials.flatMap((p) => p.idiomsAndNuances)]) {
+    if (!item.originalExpression) continue;
+    const key = item.originalExpression.trim().toLowerCase();
+    const existing = idiomMap.get(key);
+    if (!existing) {
+      idiomMap.set(key, item);
+    } else {
+      const mergedSeqs = Array.from(new Set([...existing.sequenceNumbers, ...item.sequenceNumbers])).sort(
+        (a, b) => a - b
+      );
+      idiomMap.set(key, { ...existing, sequenceNumbers: mergedSeqs });
+    }
+  }
+
+  const glossaryList = [...synthesized.glossary, ...partials.flatMap((p) => p.glossary)];
+  const plotList = Array.from(
+    new Set([...synthesized.plotDevelopments, ...partials.flatMap((p) => p.plotDevelopments)])
+  ).slice(0, 20);
+
+  return {
+    ...synthesized,
+    characters: Array.from(charMap.values()),
+    idiomsAndNuances: Array.from(idiomMap.values()),
+    glossary: glossaryList,
+    plotDevelopments: plotList,
+  };
+}
+
+/**
+ * Stateless helper for analyzing a single segment of up to 350 subtitle entries.
+ * Used by the client-orchestrated multi-pass pipeline so 100% of long films (e.g. 1690 entries)
+ * are analyzed without hitting serverless function timeouts.
+ */
+export async function analyzeSubtitleSegmentStateless(params: {
+  segmentEntries: SubtitleEntry[];
+  segmentIndex: number;
+  totalSegments: number;
+  totalEntriesInFile: number;
+  previousStoryline?: string;
+  previousCharactersSummary?: string;
+  sourceLanguage: string;
+  targetLanguage: string;
+  arabicDialect?: ArabicDialect;
+  preferences: TranslationPreferencesConfig;
+  aiAdapter: AIProviderAdapter;
+}): Promise<{
+  partialAnalysis: ContextAnalysisResponse;
+  contextProfile: GlobalContextProfile;
+  glossary: GlossaryItem[];
+  detectedSourceLanguage?: string;
+}> {
+  const {
+    segmentEntries,
+    segmentIndex,
+    totalSegments,
+    totalEntriesInFile,
+    previousStoryline,
+    previousCharactersSummary,
+    sourceLanguage,
+    targetLanguage,
+    arabicDialect = 'msa',
+    preferences,
+    aiAdapter,
+  } = params;
+
+  const { systemPrompt, targetLangName, dialectInfo } = buildAnalysisSystemPrompt({
+    sourceLanguage,
+    targetLanguage,
+    arabicDialect,
+    preferences,
+  });
+
+  const firstSeq = segmentEntries[0]?.sequence ?? 1;
+  const lastSeq = segmentEntries[segmentEntries.length - 1]?.sequence ?? segmentEntries.length;
+  const transcript = formatTranscriptSegment(segmentEntries);
+
+  const userPrompt =
+    totalSegments === 1
+      ? `Analyze the following complete subtitle file (${segmentEntries.length} entries, from #${firstSeq} to #${lastSeq}) for translation into ${targetLangName}${dialectInfo ? ` (${dialectInfo.nameEn})` : ''}:
+
+=== COMPLETE SUBTITLE TRANSCRIPT ===
+${transcript}
+=== END OF TRANSCRIPT ===
+
+Return the complete JSON analysis.`
+      : `Analyze Act/Segment ${segmentIndex + 1} of ${totalSegments} (entries #${firstSeq} to #${lastSeq} out of ${totalEntriesInFile} total entries) for translation into ${targetLangName}${dialectInfo ? ` (${dialectInfo.nameEn})` : ''}.
+${
+  previousStoryline || previousCharactersSummary
+    ? `\nPreviously discovered storyline & characters so far:\n${previousStoryline ? `Storyline: ${previousStoryline}\n` : ''}${previousCharactersSummary ? `Characters: ${previousCharactersSummary}\n` : ''}`
+    : ''
+}
+=== SEGMENT TRANSCRIPT (#${firstSeq} - #${lastSeq}) ===
+${transcript}
+=== END OF SEGMENT ===
+
+Return the JSON analysis for this segment.`;
+
+  const { data } = await aiAdapter.generateStructured(
+    {
+      systemPrompt,
+      userPrompt,
+      temperature: 0.2,
+    },
+    ContextAnalysisResponseSchema
+  );
+
+  const built = buildFinalContextOutput(data, totalEntriesInFile, totalSegments);
+  return {
+    partialAnalysis: data,
+    ...built,
+  };
+}
+
+/**
+ * Stateless helper to synthesize multiple segment analyses into a single unified
+ * GlobalContextProfile and Glossary covering 100% of the subtitle script.
+ */
+export async function synthesizeSegmentAnalysesStateless(params: {
+  partialAnalyses: unknown[];
+  totalEntriesInFile: number;
+  sourceLanguage: string;
+  targetLanguage: string;
+  arabicDialect?: ArabicDialect;
+  preferences: TranslationPreferencesConfig;
+  aiAdapter: AIProviderAdapter;
+}): Promise<{
+  contextProfile: GlobalContextProfile;
+  glossary: GlossaryItem[];
+  detectedSourceLanguage?: string;
+}> {
+  const {
+    partialAnalyses,
+    totalEntriesInFile,
+    sourceLanguage,
+    targetLanguage,
+    arabicDialect = 'msa',
+    preferences,
+    aiAdapter,
+  } = params;
+
+  const validatedPartials = partialAnalyses.map((p) => ContextAnalysisResponseSchema.parse(p));
+  if (validatedPartials.length === 1) {
+    return buildFinalContextOutput(validatedPartials[0], totalEntriesInFile, 1);
+  }
+
+  const { systemPrompt, targetLangName } = buildAnalysisSystemPrompt({
+    sourceLanguage,
+    targetLanguage,
+    arabicDialect,
+    preferences,
+  });
+
+  const synthesisPrompt = `Synthesize the following ${validatedPartials.length} sequential segment analyses covering all ${totalEntriesInFile} subtitle entries of the film/episode into one unified master Global Context Profile and deduplicated Persistent Translation Glossary for ${targetLangName}:
+
+${JSON.stringify(validatedPartials, null, 2)}
+
+Ensure every character (with their exact gender and relationships), plot turn, idiom/slang/sarcasm discovery, and glossary term is unified and consistent from beginning to end. Return valid JSON.`;
+
+  const { data: synthesized } = await aiAdapter.generateStructured(
+    {
+      systemPrompt,
+      userPrompt: synthesisPrompt,
+      temperature: 0.15,
+    },
+    ContextAnalysisResponseSchema
+  );
+
+  const merged = mergePartialAnalysesIntoSynthesized(synthesized, validatedPartials);
+  return buildFinalContextOutput(merged, totalEntriesInFile, validatedPartials.length + 1);
 }
 
 /**
@@ -277,12 +545,12 @@ export async function analyzeFullSubtitleContext(params: {
     singlePassFastMode = false,
   } = params;
 
-  const targetLangName = getLanguageName(targetLanguage, 'en');
-  const sourceLangName =
-    sourceLanguage === 'auto' ? 'Auto-detected original language' : getLanguageName(sourceLanguage, 'en');
-
-  const isArabicTarget = targetLanguage.toLowerCase() === 'ar';
-  const dialectInfo = isArabicTarget ? getArabicDialectOption(arabicDialect) : null;
+  const { systemPrompt, targetLangName, dialectInfo } = buildAnalysisSystemPrompt({
+    sourceLanguage,
+    targetLanguage,
+    arabicDialect,
+    preferences,
+  });
 
   // Split entries into segments if the file is very large so 100% of entries are read without truncation
   const segments: SubtitleEntry[][] = [];
@@ -304,57 +572,6 @@ export async function analyzeFullSubtitleContext(params: {
       segments.push(entries.slice(i, i + MAX_ENTRIES_PER_ANALYSIS_PASS));
     }
   }
-
-  const systemPrompt = `You are a Chief Audiovisual Script Analyst and Localization Director.
-Your job is to read the subtitle script and produce a comprehensive JSON Global Context Profile and Persistent Translation Glossary before translation begins.
-
-Target Language: ${targetLangName}${dialectInfo ? ` (${dialectInfo.nameEn} - ${dialectInfo.nativeLabel})` : ''}
-Source Language: ${sourceLangName}
-Requested Style: ${preferences.style}
-
-Respond ONLY with a valid JSON object matching this EXACT structure and key names:
-{
-  "detectedSourceLanguageCode": "en",
-  "subjectAndStoryline": "Detailed summary of the storyline, core conflict, and setting",
-  "narrativeContextAndGenre": "Genre, dramatic/comedic context, and tone",
-  "overallTone": "Emotional atmosphere and dialogue pacing",
-  "speechPatternsSummary": "Formal vs informal speech dynamics, register shifts, and character dynamics",
-  "plotDevelopments": ["Plot point 1", "Plot point 2"],
-  "arabicLocalizationGuidance": "Specific grammatical, gender-agreement (تذكير وتأنيث), and pronoun guidance",
-  "characters": [
-    {
-      "name": "Original name in script",
-      "translatedName": "Consistent localized name in ${targetLangName}",
-      "gender": "male | female | unknown | non-binary",
-      "role": "Character's role in the story",
-      "personalityAndTone": "Speaking style, temperament, vocabulary",
-      "formalityLevel": "formal | informal | mixed",
-      "relationships": "How they relate to and address other characters"
-    }
-  ],
-  "idiomsAndNuances": [
-    {
-      "sequenceNumbers": [4, 8],
-      "originalExpression": "Exact idiom, joke, or sarcastic phrase from script",
-      "type": "idiom | sarcasm | joke | slang | cultural_reference | emotional_shift | rhetorical_question",
-      "intendedMeaning": "What the speaker actually means in context",
-      "recommendedTranslationStrategy": "Recommended natural localization in ${targetLangName}"
-    }
-  ],
-  "glossary": [
-    {
-      "sourceTerm": "Original name, place, organization, or recurring term",
-      "targetTerm": "Exact consistent translation in ${targetLangName}",
-      "category": "character | location | organization | terminology | idiom | recurring_phrase",
-      "gender": "male | female | neutral | plural",
-      "contextNotes": "Brief usage note"
-    }
-  ]
-}
-
-IMPORTANT:
-- "sequenceNumbers" inside "idiomsAndNuances" MUST be an array of plain integers (e.g. [4, 8]), NOT strings like ["#4"].
-- Each item in "glossary" MUST use the exact keys "sourceTerm" and "targetTerm".`;
 
   if (segments.length === 1) {
     onProgress?.(
@@ -448,7 +665,8 @@ Ensure every character, relationship, plot turn, idiom/sarcasm discovery, and gl
     ContextAnalysisResponseSchema
   );
 
-  return buildFinalContextOutput(synthesized, entries.length, totalPasses);
+  const merged = mergePartialAnalysesIntoSynthesized(synthesized, partialAnalyses);
+  return buildFinalContextOutput(merged, entries.length, totalPasses);
 }
 
 function buildFinalContextOutput(
