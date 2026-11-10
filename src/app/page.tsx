@@ -10,7 +10,25 @@ import {
   BookOpen,
   Languages,
   Loader2,
+  Mail,
 } from 'lucide-react';
+
+function GithubIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4" />
+      <path d="M9 18c-4.51 2-5-2-7-2" />
+    </svg>
+  );
+}
 import { useApp } from '@/context/AppContext';
 import {
   ArabicDialect,
@@ -610,36 +628,36 @@ export default function HomePage() {
         {/* VIEW 1: MAIN TRANSLATION DASHBOARD */}
         {activeView === 'dashboard' && (
           <div className="space-y-6">
-            {/* Hero Banner */}
-            <div className="rounded-3xl bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-950 text-white p-6 sm:p-8 border border-indigo-500/20 shadow-md relative overflow-hidden">
+            {/* Hero Banner with Dynamic Light/Dark Theme Support */}
+            <div className="rounded-3xl bg-gradient-to-br from-indigo-50/80 via-white to-sky-50/60 dark:from-indigo-950 dark:via-slate-900 dark:to-slate-950 text-slate-900 dark:text-white p-6 sm:p-8 border border-indigo-100 dark:border-indigo-500/20 shadow-sm dark:shadow-md relative overflow-hidden transition-colors">
               <div className="max-w-3xl space-y-3 relative z-10">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-400/30">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-100/90 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-400/30">
                   <Sparkles className="w-3.5 h-3.5" />
                   {t.hero.badge}
                 </span>
-                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight leading-tight">
+                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight leading-tight text-slate-900 dark:text-white">
                   {t.hero.title}
                 </h1>
-                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
                   {t.hero.subtitle}
                 </p>
 
                 {/* Feature Highlights */}
-                <div className="pt-2 grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs text-slate-300">
-                  <div className="flex items-center gap-1.5 bg-white/5 px-3 py-2 rounded-xl border border-white/10">
-                    <BookOpen className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                <div className="pt-2 grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs text-slate-700 dark:text-slate-300">
+                  <div className="flex items-center gap-1.5 bg-white/80 dark:bg-white/5 px-3 py-2 rounded-xl border border-slate-200/80 dark:border-white/10 shadow-xs dark:shadow-none">
+                    <BookOpen className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
                     <span>{uiLang === 'ar' ? 'تحليل القصة كاملة' : 'Full-Script Analysis'}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 bg-white/5 px-3 py-2 rounded-xl border border-white/10">
-                    <Languages className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <div className="flex items-center gap-1.5 bg-white/80 dark:bg-white/5 px-3 py-2 rounded-xl border border-slate-200/80 dark:border-white/10 shadow-xs dark:shadow-none">
+                    <Languages className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                     <span>{uiLang === 'ar' ? 'محرك تعريب احترافي' : 'Native Arabic Engine'}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 bg-white/5 px-3 py-2 rounded-xl border border-white/10">
-                    <Layers className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <div className="flex items-center gap-1.5 bg-white/80 dark:bg-white/5 px-3 py-2 rounded-xl border border-slate-200/80 dark:border-white/10 shadow-xs dark:shadow-none">
+                    <Layers className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
                     <span>{uiLang === 'ar' ? 'نوافذ سياق متداخلة' : 'Context Window Chunks'}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 bg-white/5 px-3 py-2 rounded-xl border border-white/10">
-                    <ShieldCheck className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <div className="flex items-center gap-1.5 bg-white/80 dark:bg-white/5 px-3 py-2 rounded-xl border border-slate-200/80 dark:border-white/10 shadow-xs dark:shadow-none">
+                    <ShieldCheck className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
                     <span>{uiLang === 'ar' ? 'حفظ 100% للتوقيت' : '100% SRT Sync Intact'}</span>
                   </div>
                 </div>
@@ -805,6 +823,40 @@ export default function HomePage() {
           />
         )}
       </main>
+
+      {/* Footer */}
+      <footer className="mt-auto border-t border-slate-200 dark:border-slate-800/80 bg-white/70 dark:bg-slate-900/60 backdrop-blur-md py-6 text-xs text-slate-500 dark:text-slate-400">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-800 dark:text-slate-200">Subtitle Studio</span>
+            <span>•</span>
+            <span>
+              {uiLang === 'ar'
+                ? 'منصة تعريب وترجمة ملفات الترجمة السينمائية والتلفزيونية'
+                : 'Contextual AI Audiovisual Subtitle Localization Platform'}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+            <a
+              href="https://github.com/evile92/subtitle-studio"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+            >
+              <GithubIcon className="w-4 h-4" />
+              <span>GitHub</span>
+            </a>
+            <a
+              href="mailto:stellarspeakapp@gmail.com"
+              className="inline-flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+            >
+              <Mail className="w-4 h-4" />
+              <span>stellarspeakapp@gmail.com</span>
+            </a>
+          </div>
+        </div>
+      </footer>
 
       {/* Modals */}
       <SettingsModal
