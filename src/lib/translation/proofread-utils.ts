@@ -83,23 +83,40 @@ export function detectEntriesNeedingProofread(
 
         // 4. Check for awkward literal machine calques or common spelling errors
         if (
-          /(يأخذ مكان|يصنع معنى|قطعة من الكعكة|هل تقوم بممازحتي|انشاء الله|ما اللعنة|بحق اللعنة|إثارة الدراما|تثير الدراما|أعدك بشدة|بهذه الطاقة|هذا اللعين|تلك اللعينة|تشفع لهذا|سأقدم استقالتي بعد أسبوعين)/.test(
+          /(يأخذ مكان|يصنع معنى|قطعة من الكعكة|هل تقوم بممازحتي|انشاء الله|ما اللعنة|بحق اللعنة|إثارة الدراما|تثير الدراما|أعدك بشدة|بهذه الطاقة|هذا اللعين|تلك اللعينة|تشفع لهذا|سأقدم استقالتي بعد أسبوعين|ضعفي الذي)/.test(
             cleanTrans
           )
         ) {
           reasons.push('Contains literal calque or unnatural Arabic phrasing');
         }
 
-        // 5. Check for high-risk English idioms/slang that are frequently mistranslated literally
+        // 5. Check for semantic confusion between modern slang, double-entendres, and sensory collocations
+        if (/\bcringey?\b/i.test(cleanOrig) && /(مقزز|مقرف)/.test(cleanTrans)) {
+          reasons.push("'Cringey' mistranslated as 'مقزز' instead of 'محرج / يثير الحرج'");
+        }
+        if (/\brock hard\b/i.test(cleanOrig) && /(متحمس|شغوف)/.test(cleanTrans)) {
+          reasons.push("'Rock hard' comedic double-entendre sanitized/flattened to 'متحمس'");
+        }
+        if (/\bvulnerable\b/i.test(cleanOrig) && /(ضعف|ضعفي)/.test(cleanTrans)) {
+          reasons.push("'Vulnerable' translated literally as weakness instead of emotional openness ('كشفت لك نفسي / فتحت لك قلبي')");
+        }
+        if (/\bstale\b/i.test(cleanOrig) && /(قديم|قديمة)/.test(cleanTrans)) {
+          reasons.push("'Stale' food adjective translated as 'قديم' instead of 'بايت / غير طازج'");
+        }
+        if (/\bcasual\b/i.test(cleanOrig) && /(سطحي|سطحية)/.test(cleanTrans)) {
+          reasons.push("'Casual' relationship translated as 'سطحية' instead of 'غير جدية / غير ملزمة'");
+        }
+
+        // 6. Check for high-risk English idioms/slang that require contextual subtext verification
         if (
-          /\b(putting in my two weeks|two weeks'?\s*notice|wasted|hooking up|hooked up|hook up|tease her|tease him|makes up for that shit|seizure|super promise)\b/i.test(
+          /\b(putting in my two weeks|two weeks'?\s*notice|wasted|hooking up|hooked up|hook up|tease her|tease him|makes up for that shit|seizure|super promise|rock hard|cringey|vulnerable|stale|super casual)\b/i.test(
             cleanOrig
           )
         ) {
-          reasons.push('Contains colloquial idiom/slang requiring contextual subtext verification');
+          reasons.push('Contains colloquial idiom/slang/innuendo requiring contextual subtext verification');
         }
 
-        // 6. Check for dual-speaker turn switches ("- ") or direct second-person address prone to speaker/addressee gender reversal
+        // 7. Check for dual-speaker turn switches ("- ") or direct second-person address prone to speaker/addressee gender reversal
         if (
           (cleanOrig.includes('- ') && /\b(tell me|you want|can I do|with me)\b/i.test(cleanOrig)) ||
           /(أخبريني|تريدينني)/.test(cleanTrans)
@@ -109,7 +126,7 @@ export function detectEntriesNeedingProofread(
       }
     }
 
-    // 7. Include any entry flagged by the 11-point QA validator
+    // 8. Include any entry flagged by the 11-point QA validator
     if (
       (entry.warnings && entry.warnings.length > 0) ||
       entry.status === 'warning'

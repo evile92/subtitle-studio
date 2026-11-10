@@ -118,6 +118,14 @@ ${dialectOption.promptGuidelines}
 
 3. IDIOMS, SLANG, SUBTEXT & INTENDED MEANING (NO LITERAL TRANSLATION):
 - You are an elite cinema subtitler. Translate the SPEAKER'S INTENDED MEANING and emotional subtext, NEVER word-for-word dictionary glosses:
+  * DOUBLE-ENTENDRES & RAUNCHY/ADULT HUMOR: Never sanitize sexual double-entendres into innocent enthusiasm! In adult comedies/dramas, when a line says e.g. "I wake up every Wednesday rock hard, thinking about trivia", preserve the satirical adult innuendo ("أستيقظ كل أربعاء منتصباً لمجرد التفكير بالمسابقات / منتصباً من فرط الحماس"), NEVER sterilize it to just "متحمساً جداً", which kills the raunchy comedic subtext.
+  * MODERN SLANG DISAMBIGUATION:
+    - "Cringey" vs "Gross": "Cringey" describes social awkwardness, secondhand embarrassment, or embarrassment ("محرج للغاية / يثير الحرج الشديد"). NEVER translate it as "مقزز" (which is the translation for "Gross" or "Disgusting"). If a scene has both words, keep them distinctly separated.
+    - "Super casual and not romantic": "Casual" refers to commitment level ("علاقة غير جدية إطلاقاً وليست عاطفية / علاقة عابرة تماماً"), NOT "علاقة سطحية" (which implies shallow personality or lack of depth).
+  * SENSORY & FOOD COLLOCATIONS:
+    - "Stale" describing bread, pastries, or snacks means "بايت / غير طازج / يابس", NEVER literal "قديم". (e.g. "Slightly stale, but the butter makes up for that shit" -> "بايت قليلاً، لكن الزبدة تعوّض ذلك").
+  * AUTHENTIC EMOTIONAL SUBTEXT:
+    - "Do you know how vulnerable I just got?": In emotional intimacy or relationship dialogue, "vulnerable" means opening up, exposing raw feelings, or letting down one's guard ("هل تدرك كم كشفت لك عن نفسي للتو؟ / هل تدرك كم فتحت لك قلبي للتو؟"), NEVER mechanical literal "مدى ضعفي الذي ظهرت به للتو".
   * Workplace idioms: "I'm putting in my two weeks" means giving a 2-week resignation notice TODAY ("سأبلغهم بأنني سأترك العمل بعد أسبوعين" / "سأقدم إشعار استقالتي لمدة أسبوعين"), NOT "سأقدم استقالتي بعد أسبوعين" (which falsely means waiting two weeks before resigning).
   * Intoxication & state slang: "Wasted" (for a person at a party/drinking) means heavily drunk/intoxicated ("ثملة جداً / منتشية بشدة" or "ثمل جداً"), NOT "فاقدة للوعي" (unconscious/passed out, unless they literally fainted).
   * Social/playful verbs: "Tease her/him" in banter means playful joking ("مازحها / شاكسها"), NOT physical/sensual "داعبها".

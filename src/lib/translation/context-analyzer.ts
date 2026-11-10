@@ -268,7 +268,15 @@ Requested Style: ${preferences.style}
 
 CRITICAL EXTRACTION PRIORITIES:
 1. CHARACTER GENDERS & RELATIONSHIPS: Identify EVERY named or recurring character's exact gender ("male" or "female") and how they relate to others (romantic partners, casual/physical fling vs emotional dating, coworkers, family, rivals). This is vital for Arabic masculine/feminine verb and pronoun conjugation (التذكير والتأنيث).
-2. COLLOQUIAL IDIOMS, SLANG & SUBTEXT: Identify idioms, workplace expressions (e.g. "putting in my two weeks"), party/intoxication slang ("wasted"), relationship slang ("hooking up on and off"), playful banter ("tease her/him"), sarcasm, and double meanings along with their exact "sequenceNumbers" and natural ${targetLangName} translation strategy (never literal word-for-word calques).
+2. COLLOQUIAL IDIOMS, SLANG, DOUBLE-ENTENDRES & SUBTEXT: Identify:
+   - Workplace idioms (e.g. "putting in my two weeks").
+   - Intoxication/party slang ("wasted").
+   - Relationship nature & physical subtext ("hooking up on and off", "super casual and not romantic").
+   - Adult double-entendres & raunchy humor (e.g. "rock hard, thinking about trivia" — identify the comedic innuendo so it is NOT sanitized into innocent enthusiasm).
+   - Modern slang with subtle distinctions ("cringey" = embarrassing/socially awkward, distinct from "gross" = disgusting).
+   - Food/sensory collocations ("stale" = بايت / غير طازج, not generic old).
+   - Emotional vulnerability ("vulnerable" = opening up / exposing feelings, not literal weakness).
+   Record each in "idiomsAndNuances" with its exact "sequenceNumbers" and recommended natural localization strategy (never literal word-for-word calques).
 
 Respond ONLY with a valid JSON object matching this EXACT structure and key names:
 {
