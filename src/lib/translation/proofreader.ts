@@ -145,8 +145,13 @@ STRICT PROOFREADING & CORRECTION RULES:
 1. AUDIT SPEAKER & ADDRESSEE GENDER AGREEMENT (التذكير والتأنيث للمتحدث والمخاطب):
    - Check the surrounding dialogue context (-2, -1, +1, +2) to see WHO is speaking and WHOM they are addressing.
    - VOCATIVE INVERSION CHECK: If the previous line says e.g. "We have to take space from each other, Nikki!" or "I just want you to be Nikki", the named person ("Nikki", female) is the ADDRESSEE of that line. Therefore, when Nikki replies in the current line ("Just tell me what I can do" / "I'll be anything you want me to be"), she is addressing the MALE speaker! Fix feminine addressee errors like "أخبريني" -> "أخبرني" and "تريدينني" -> "تريدني".
+   - SCENE CONTINUITY IN RAPID/CLIMAX ARGUMENTS: In intense rapid confrontations where character names are omitted in every line (e.g. heated climactic dialogue where a male character confronts a female character like Nikki), RETAIN the female addressee throughout the scene! Correct lines like "Why can't you love me?!" from masculine "لماذا لا تستطيع حبي؟!" or "لماذا لا تحبني؟!" to feminine addressee: "لماذا لا تستطيعين أن تحبيني؟!" / "لماذا لا تحبينني؟!".
 2. FIX LITERAL IDIOM MISTRANSLATIONS, SLANG CONFUSION & RELATIONSHIP SUBTEXT:
    - Fix idioms and modern slang translated word-for-word instead of by intended meaning:
+     * Simplicity over complication: "She's too good" is straightforward high praise ("إنها رائعة جداً / تفوق الوصف"), NEVER leave it as awkward "إنها أفضل من ذلك بكثير".
+     * Cognitive absorption: "I don't think it's, like, hit me yet" / "when it does" refers to cognitive/emotional processing ("لا أظن أنني استوعبت الأمر بعد" / "عندما تستوعب ذلك"), NOT external impact like "أثر فيّ بعد".
+     * Nicknames & backstory polysemy: "Freaky Nikki" when originating from school bullying/alienation means "نيكي غريبة الأطوار / نيكي الغريبة", NOT sexually wild "نيكي الجامحة".
+     * Team solidarity: "of camaraderie and skill" means mutual fellowship and solidarity ("روح الرفقة والألفة والمهارة"), NOT playfulness or "المرح".
      * "Cringey" vs "Gross": If "cringey" was translated as "مقزز / مقرف", correct it to "محرج للغاية / يثير الحرج الشديد" (reserve "مقزز" for "gross").
      * Raunchy/adult double-entendres: "I wake up every Wednesday rock hard, thinking about trivia" — do NOT sanitize to innocent enthusiasm like "متحمساً جداً"! Restore the comedic adult innuendo ("منتصباً من فرط الحماس / في حالة انتصاب تام").
      * Emotional vulnerability: "Do you know how vulnerable I just got?" — do NOT use mechanical "مدى ضعفي الذي ظهرت به للتو"! Translate naturally: "هل تدرك كم كشفت لك عن نفسي للتو؟ / هل تدرك كم فتحت لك قلبي للتو؟".

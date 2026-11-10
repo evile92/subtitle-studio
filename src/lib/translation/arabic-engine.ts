@@ -115,9 +115,20 @@ ${dialectOption.promptGuidelines}
   * NEVER blindly copy the gender of a name mentioned in a nearby line onto the addressee of the reply! If a female character replies to a male character, she MUST use masculine addressee forms ("فقط أخبرني بما يمكنني فعله" / "سأكون أي شيء تريدني أن أكونه"), NEVER feminine ("أخبريني" / "تريدينني").
 - DUAL-SPEAKER DASH ("- ") TURN ALTERNATION:
   * When a single subtitle entry contains two speaker turns separated by "- ", they are TWO DIFFERENT speakers talking to each other. Track who speaks first and who replies so each half has the exact right speaker and addressee gender.
+- SCENE-LEVEL DIALOGUE CONTINUITY (استمرارية أطراف المشهد في الحوارات السريعة):
+  * In rapid confrontations, emotional outbursts, or climax scenes (e.g. heated arguments without character names mentioned in every short line), RETAIN the established speaker and addressee genders from the preceding lines!
+  * If a male character is arguing with or confronting a female character (e.g. confronting Nikki in climactic lines like "Why can't you love me?!"), he is addressing HER (Female Addressee). You MUST conjugate verbs and second-person pronouns in the feminine form ("لماذا لا تستطيعين أن تحبيني؟! / لماذا لا تحبينني؟!"), NEVER revert to default masculine ("لماذا لا تستطيع حبي؟!").
 
 3. IDIOMS, SLANG, SUBTEXT & INTENDED MEANING (NO LITERAL TRANSLATION):
 - You are an elite cinema subtitler. Translate the SPEAKER'S INTENDED MEANING and emotional subtext, NEVER word-for-word dictionary glosses:
+  * SIMPLICITY & ANTI-OVERCOMPLICATION (قاعدة البساطة ومنع التفلسف):
+    - Keep simple, common spoken compliments simple and punchy. "She's too good" is straightforward high praise ("إنها رائعة جداً / تفوق الوصف"), NEVER over-complicate it into unnatural calques like "إنها أفضل من ذلك بكثير". Translate what real people say aloud naturally.
+  * COGNITIVE ABSORPTION IDIOMS (تعبيرات الاستيعاب النفسي والإدراك):
+    - "It hasn't hit me yet" / "When it does": Refers to cognitive and emotional absorption/processing of a shock or event ("لا أظن أنني استوعبت الأمر بعد" / "عندما تستوعب ذلك"), NOT external or physical impact like "أثر فيّ بعد".
+  * CONTEXT-SPECIFIC NICKNAMES & POLYSEMY (سياق الألقاب وتعدد المعاني):
+    - "Freaky Nikki": When a nickname stems from school bullying, eccentric behavior, or feeling like an outcast, "freaky" means "غريبة الأطوار / المريبة / الشاذة", NEVER sexually wild ("الجامحة"). Always match the nickname to the character's backstory.
+  * PRECISE COLLOQUIAL COLLOCATIONS (متلازمات التكاتف والرفقة):
+    - "Camaraderie and skill": "Camaraderie" is the mutual bond of fellowship, trust, and solidarity ("روح الرفقة / الألفة والتكاتف والمهارة"), NEVER conflate it with playfulness or fun ("المرح").
   * DOUBLE-ENTENDRES & RAUNCHY/ADULT HUMOR: Never sanitize sexual double-entendres into innocent enthusiasm! In adult comedies/dramas, when a line says e.g. "I wake up every Wednesday rock hard, thinking about trivia", preserve the satirical adult innuendo ("أستيقظ كل أربعاء منتصباً لمجرد التفكير بالمسابقات / منتصباً من فرط الحماس"), NEVER sterilize it to just "متحمساً جداً", which kills the raunchy comedic subtext.
   * MODERN SLANG DISAMBIGUATION:
     - "Cringey" vs "Gross": "Cringey" describes social awkwardness, secondhand embarrassment, or embarrassment ("محرج للغاية / يثير الحرج الشديد"). NEVER translate it as "مقزز" (which is the translation for "Gross" or "Disgusting"). If a scene has both words, keep them distinctly separated.

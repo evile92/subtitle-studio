@@ -106,10 +106,22 @@ export function detectEntriesNeedingProofread(
         if (/\bcasual\b/i.test(cleanOrig) && /(سطحي|سطحية)/.test(cleanTrans)) {
           reasons.push("'Casual' relationship translated as 'سطحية' instead of 'غير جدية / غير ملزمة'");
         }
+        if (/\btoo good\b/i.test(cleanOrig) && /(أفضل من ذلك)/.test(cleanTrans)) {
+          reasons.push("'Too good' over-complicated into 'أفضل من ذلك بكثير' instead of natural 'رائعة جداً / تفوق الوصف'");
+        }
+        if (/\bfreaky\b/i.test(cleanOrig) && /(جامحة|الجامحة)/.test(cleanTrans)) {
+          reasons.push("'Freaky' nickname mistranslated as 'الجامحة' instead of 'غريبة / غريبة الأطوار'");
+        }
+        if (/\bcamaraderie\b/i.test(cleanOrig) && /(مرح|المرح)/.test(cleanTrans)) {
+          reasons.push("'Camaraderie' mistranslated as 'مرح' instead of 'روح الرفقة / الألفة والتكاتف'");
+        }
+        if (/\bhit me\b/i.test(cleanOrig) && /(أثر في|أثرت في)/.test(cleanTrans)) {
+          reasons.push("'Hit me yet' mistranslated as external impact 'أثر فيّ' instead of cognitive processing 'استوعبت الأمر بعد'");
+        }
 
         // 6. Check for high-risk English idioms/slang that require contextual subtext verification
         if (
-          /\b(putting in my two weeks|two weeks'?\s*notice|wasted|hooking up|hooked up|hook up|tease her|tease him|makes up for that shit|seizure|super promise|rock hard|cringey|vulnerable|stale|super casual)\b/i.test(
+          /\b(putting in my two weeks|two weeks'?\s*notice|wasted|hooking up|hooked up|hook up|tease her|tease him|makes up for that shit|seizure|super promise|rock hard|cringey|vulnerable|stale|super casual|too good|freaky|camaraderie|hit me yet|love me)\b/i.test(
             cleanOrig
           )
         ) {
@@ -119,9 +131,10 @@ export function detectEntriesNeedingProofread(
         // 7. Check for dual-speaker turn switches ("- ") or direct second-person address prone to speaker/addressee gender reversal
         if (
           (cleanOrig.includes('- ') && /\b(tell me|you want|can I do|with me)\b/i.test(cleanOrig)) ||
-          /(أخبريني|تريدينني)/.test(cleanTrans)
+          /(أخبريني|تريدينني|تستطيع حبي)/.test(cleanTrans) ||
+          (/\b(why can't you love me|can't you love me)\b/i.test(cleanOrig) && /(تستطيع|تحبني)/.test(cleanTrans))
         ) {
-          reasons.push('Verify speaker-to-addressee gender agreement (التذكير والتأنيث للمخاطب)');
+          reasons.push('Verify speaker-to-addressee gender agreement (التذكير والتأنيث للمخاطب في الحوارات السريعة)');
         }
       }
     }

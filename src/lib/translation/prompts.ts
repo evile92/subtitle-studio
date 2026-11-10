@@ -155,6 +155,7 @@ CRITICAL SRT FORMATTING & INTEGRITY RULES:
 4. Preserve line breaks (\\n) for two-line subtitles when natural or when two speakers with "- " prefixes speak in the same entry.
 5. Never include timestamps or sequence numbers inside the "translatedText" string itself.
 6. Never add translator explanations or parenthetical notes that do not exist in the original subtitle.
+7. In rapid, emotional, or climax two-person dialogues where names are omitted, maintain speaker and addressee continuity across consecutive lines so verbs and second-person pronouns do not flip unexpectedly to default masculine.
 ${contextSection}${glossarySection}${nuancesSection}${arabicSection}
 
 OUTPUT FORMAT:
