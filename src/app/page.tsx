@@ -825,9 +825,9 @@ export default function HomePage() {
       </main>
 
       {/* Footer */}
-      <footer className="mt-auto border-t border-slate-200 dark:border-slate-800/80 bg-white/70 dark:bg-slate-900/60 backdrop-blur-md py-6 text-xs text-slate-500 dark:text-slate-400">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
+      <footer className="mt-auto border-t border-slate-200 dark:border-slate-800/80 bg-white/70 dark:bg-slate-900/60 backdrop-blur-md py-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col items-center justify-center gap-3 text-center">
+          <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-slate-500 dark:text-slate-400">
             <span className="font-bold text-slate-800 dark:text-slate-200">Subtitle Studio</span>
             <span>•</span>
             <span>
@@ -837,22 +837,24 @@ export default function HomePage() {
             </span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+          <div className="flex items-center justify-center gap-3">
             <a
               href="https://github.com/evile92/subtitle-studio"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+              title="GitHub Repository"
+              aria-label="GitHub Repository"
+              className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-700 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-all border border-slate-200/80 dark:border-slate-700/60 shadow-xs hover:scale-105"
             >
               <GithubIcon className="w-4 h-4" />
-              <span>GitHub</span>
             </a>
             <a
               href="mailto:stellarspeakapp@gmail.com"
-              className="inline-flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+              title="stellarspeakapp@gmail.com"
+              aria-label="stellarspeakapp@gmail.com"
+              className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-700 text-slate-600 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 transition-all border border-slate-200/80 dark:border-slate-700/60 shadow-xs hover:scale-105"
             >
               <Mail className="w-4 h-4" />
-              <span>stellarspeakapp@gmail.com</span>
             </a>
           </div>
         </div>
