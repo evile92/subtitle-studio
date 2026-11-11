@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
+import Image from 'next/image';
 import {
-  Subtitles,
   Globe,
   Sun,
   Moon,
@@ -61,8 +61,15 @@ export function Navbar({
             onClick={() => onNavigate('dashboard')}
             className="flex items-center gap-2.5 text-start group focus:outline-none min-w-0"
           >
-            <div className="w-10 h-10 rounded-xl bg-indigo-600 dark:bg-indigo-500 flex items-center justify-center text-white shadow-sm group-hover:bg-indigo-700 transition-colors shrink-0">
-              <Subtitles className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-50/80 to-purple-50/80 dark:from-slate-900 dark:to-indigo-950/80 p-1 flex items-center justify-center shadow-xs border border-indigo-100 dark:border-indigo-900/60 group-hover:scale-105 transition-transform shrink-0">
+              <Image
+                src="/icon.png"
+                alt="Subtitle Studio Logo"
+                width={32}
+                height={32}
+                priority
+                className="w-8 h-8 object-contain"
+              />
             </div>
             <div className="min-w-0 max-w-[170px] sm:max-w-xs md:max-w-[200px] lg:max-w-xs">
               <div className="font-bold text-base sm:text-lg tracking-tight text-slate-900 dark:text-white flex items-center gap-2">

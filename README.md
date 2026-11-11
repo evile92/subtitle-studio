@@ -1,6 +1,16 @@
 # Subtitle Studio — Advanced AI Subtitle Translation & Synchronization Platform
 # استوديو الترجمة — منصة تعريب ومزامنة ملفات الترجمة بالذكاء الاصطناعي
 
+<p align="center">
+  <a href="https://subtitle-studio-xi.vercel.app">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="./public/logo-dark.png" />
+      <source media="(prefers-color-scheme: light)" srcset="./public/logo.png" />
+      <img src="./public/logo.png" alt="Subtitle Studio Official Logo" width="580" />
+    </picture>
+  </a>
+</p>
+
 🌐 **Live Web Application / الرابط المباشر للمنصة:** [https://subtitle-studio-xi.vercel.app](https://subtitle-studio-xi.vercel.app)
 
 ![Subtitle Studio Preview](./public/preview.jpg)
