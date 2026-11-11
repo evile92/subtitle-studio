@@ -55,26 +55,26 @@ export function Navbar({
     <header className="sticky top-0 z-40 w-full border-b border-slate-200/80 dark:border-slate-800/80 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
         {/* Brand Logo & Configurable Name */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0 min-w-0">
           <button
             type="button"
             onClick={() => onNavigate('dashboard')}
-            className="flex items-center gap-2.5 text-start group focus:outline-none"
+            className="flex items-center gap-2.5 text-start group focus:outline-none min-w-0"
           >
             <div className="w-10 h-10 rounded-xl bg-indigo-600 dark:bg-indigo-500 flex items-center justify-center text-white shadow-sm group-hover:bg-indigo-700 transition-colors shrink-0">
               <Subtitles className="w-5 h-5" />
             </div>
-            <div>
+            <div className="min-w-0 max-w-[170px] sm:max-w-xs md:max-w-[200px] lg:max-w-xs">
               <div className="font-bold text-base sm:text-lg tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-                <span>{appName}</span>
+                <span className="truncate">{appName}</span>
                 <bdi
                   dir="ltr"
-                  className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-indigo-50 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60"
+                  className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-indigo-50 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/60 shrink-0"
                 >
                   AI SRT
                 </bdi>
               </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden md:block line-clamp-1">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden lg:block truncate">
                 {t.tagline}
               </p>
             </div>
@@ -82,64 +82,64 @@ export function Navbar({
         </div>
 
         {/* Desktop Navigation */}
-        <nav className="hidden md:flex items-center gap-1 bg-slate-100/80 dark:bg-slate-900/80 p-1 rounded-xl border border-slate-200/60 dark:border-slate-800/60">
+        <nav className="hidden md:flex items-center gap-1 bg-slate-100/80 dark:bg-slate-900/80 p-1 rounded-xl border border-slate-200/60 dark:border-slate-800/60 shrink-0">
           <button
             type="button"
             onClick={() => onNavigate('dashboard')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all ${
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap shrink-0 transition-all ${
               activeView === 'dashboard'
                 ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
-            <Sparkles className="w-4 h-4" />
-            <span>{t.nav.dashboard}</span>
+            <Sparkles className="w-4 h-4 shrink-0" />
+            <span className="whitespace-nowrap">{t.nav.dashboard}</span>
           </button>
 
           {hasActiveJob && (
             <button
               type="button"
               onClick={() => onNavigate('workspace')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap shrink-0 transition-all ${
                 activeView === 'workspace' || activeView === 'progress'
                   ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
               }`}
             >
-              <FileEdit className="w-4 h-4" />
-              <span>{t.nav.workspace}</span>
+              <FileEdit className="w-4 h-4 shrink-0" />
+              <span className="whitespace-nowrap">{t.nav.workspace}</span>
             </button>
           )}
 
           <button
             type="button"
             onClick={() => onNavigate('history')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all ${
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap shrink-0 transition-all ${
               activeView === 'history'
                 ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
-            <History className="w-4 h-4" />
-            <span>{t.nav.history}</span>
+            <History className="w-4 h-4 shrink-0" />
+            <span className="whitespace-nowrap">{t.nav.history}</span>
           </button>
 
           <button
             type="button"
             onClick={() => onNavigate('sync')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all ${
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap shrink-0 transition-all ${
               activeView === 'sync'
                 ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
-            <Clock className="w-4 h-4" />
-            <span>{uiLang === 'ar' ? 'مزامنة التوقيت' : 'Sync Timing'}</span>
+            <Clock className="w-4 h-4 shrink-0" />
+            <span className="whitespace-nowrap">{t.nav.sync}</span>
           </button>
         </nav>
 
         {/* Right Controls: AI Status, Language Switcher, Theme Switcher, Settings */}
-        <div className="hidden md:flex items-center gap-2">
+        <div className="hidden md:flex items-center gap-2 shrink-0">
           {/* AI Engine Status Badge */}
           <button
             type="button"
@@ -303,7 +303,7 @@ export function Navbar({
             }`}
           >
             <Clock className="w-4 h-4" />
-            <span>{uiLang === 'ar' ? 'مزامنة التوقيت' : 'Sync Timing'}</span>
+            <span>{t.nav.sync}</span>
           </button>
 
           <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex flex-col gap-2">
