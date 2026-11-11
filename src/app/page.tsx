@@ -61,6 +61,7 @@ import { TranslationPreferences } from '@/components/TranslationPreferences';
 import { ProgressTracker } from '@/components/ProgressTracker';
 import { SubtitleWorkspace } from '@/components/SubtitleWorkspace';
 import { RecentHistory } from '@/components/RecentHistory';
+import { SubtitleSyncTool } from '@/components/SubtitleSyncTool';
 import { SettingsModal } from '@/components/SettingsModal';
 import { PrivacyModal } from '@/components/PrivacyModal';
 
@@ -68,7 +69,7 @@ export default function HomePage() {
   const { uiLang, t } = useApp();
 
   const [activeView, setActiveView] = useState<
-    'dashboard' | 'progress' | 'workspace' | 'history'
+    'dashboard' | 'progress' | 'workspace' | 'history' | 'sync'
   >('dashboard');
 
   // Step 1: Uploaded SRT file state
@@ -822,6 +823,9 @@ export default function HomePage() {
             onDeleteJob={handleDeleteJob}
           />
         )}
+
+        {/* VIEW 5: SUBTITLE SYNC & RELEASE CONVERTER */}
+        {activeView === 'sync' && <SubtitleSyncTool />}
       </main>
 
       {/* Footer */}

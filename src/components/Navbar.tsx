@@ -16,13 +16,16 @@ import {
   X,
   AlertCircle,
   CheckCircle2,
+  Clock,
 } from 'lucide-react';
 import { useApp, ThemeMode } from '@/context/AppContext';
 import { ServerAIConfigState } from '@/lib/ai/types';
 
+type NavView = 'dashboard' | 'progress' | 'workspace' | 'history' | 'sync';
+
 interface NavbarProps {
-  activeView: 'dashboard' | 'progress' | 'workspace' | 'history';
-  onNavigate: (view: 'dashboard' | 'progress' | 'workspace' | 'history') => void;
+  activeView: NavView;
+  onNavigate: (view: NavView) => void;
   hasActiveJob: boolean;
   aiConfig: ServerAIConfigState | null;
   onOpenSettings: () => void;
@@ -119,6 +122,19 @@ export function Navbar({
           >
             <History className="w-4 h-4" />
             <span>{t.nav.history}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('sync')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all ${
+              activeView === 'sync'
+                ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+            }`}
+          >
+            <Clock className="w-4 h-4" />
+            <span>{uiLang === 'ar' ? 'مزامنة التوقيت' : 'Sync Timing'}</span>
           </button>
         </nav>
 
@@ -272,6 +288,22 @@ export function Navbar({
           >
             <History className="w-4 h-4" />
             <span>{t.nav.history}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              onNavigate('sync');
+              setMobileMenuOpen(false);
+            }}
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium ${
+              activeView === 'sync'
+                ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400'
+                : 'text-slate-700 dark:text-slate-300'
+            }`}
+          >
+            <Clock className="w-4 h-4" />
+            <span>{uiLang === 'ar' ? 'مزامنة التوقيت' : 'Sync Timing'}</span>
           </button>
 
           <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex flex-col gap-2">

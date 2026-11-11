@@ -35,6 +35,15 @@ import type { AIProviderAdapter, AIGenerateRequest, AIGenerateResponse } from '@
 import { extractJsonFromResponse, createAdapterFromUserConfig } from '@/lib/ai/providers';
 import { applyUserConfigToAIState, maskApiKey } from '@/lib/storage/client-config';
 import type { TranslationJob, TranslationPreferencesConfig } from '@/types/subtitle';
+import {
+  applyLinearTransform,
+  fpsConversionScale,
+  parseFlexibleTimeToMs,
+  parseTimedSubtitle,
+  serializeTimedSubtitle,
+  syncFromReference,
+  transformFromAnchors,
+} from '@/lib/srt/sync';
 
 const DEFAULT_PREFS: TranslationPreferencesConfig = {
   style: 'natural',
@@ -796,5 +805,67 @@ Wait for me at the gate.
     assert.equal(mergedState.isConfigured, true);
     assert.equal(mergedState.configuredSource, 'client-browser');
     assert.equal(mergedState.maskedKey, 'sk-t...5678');
+  });
+
+  it('Test 11: Subtitle Sync & Release Converter — offset, FPS drift, anchors, reference copy, text untouched', () => {
+    const srt =
+      '1\n00:01:00,000 --> 00:01:02,000\n<i>Hello?</i>\n\n2\n00:30:00,000 --> 00:30:03,500\nمرحباً\n\n3\n01:40:00,000 --> 01:40:02,000\n- Bye.\n- See you.\n';
+    const parsed = parseTimedSubtitle('\uFEFF' + srt.replace(/\n/g, '\r\n'));
+    assert.equal(parsed.format, 'srt');
+    assert.equal(parsed.cues.length, 3);
+    assert.equal(parsed.cues[0].startMs, 60_000);
+    assert.equal(parsed.cues[2].text, '- Bye.\n- See you.');
+
+    // Constant offset (+2.5s)
+    const shifted = applyLinearTransform(parsed.cues, { scale: 1, offsetMs: 2500 });
+    assert.equal(shifted.cues[0].startMs, 62_500);
+    assert.equal(shifted.cues[1].endMs, 1_803_500 + 2500);
+
+    // FPS conversion 23.976 -> 25 shrinks timestamps
+    const fps = applyLinearTransform(parsed.cues, { scale: fpsConversionScale(23.976, 25), offsetMs: 0 });
+    assert.equal(fps.cues[2].startMs, Math.round(6_000_000 * (23.976 / 25)));
+
+    // Two-anchor sync recovers both offset and drift exactly
+    const t = transformFromAnchors(
+      { subtitleMs: 60_000, videoMs: 60_000 * 0.95904 + 4000 },
+      { subtitleMs: 6_000_000, videoMs: 6_000_000 * 0.95904 + 4000 }
+    );
+    assert.ok(Math.abs(t.scale - 0.95904) < 1e-9);
+    assert.ok(Math.abs(t.offsetMs - 4000) < 1e-6);
+
+    // Single anchor = pure offset
+    assert.deepEqual(transformFromAnchors({ subtitleMs: 60_000, videoMs: 58_000 }), {
+      scale: 1,
+      offsetMs: -2000,
+    });
+
+    // Negative shifts are clamped and counted
+    const clamped = applyLinearTransform(parsed.cues, { scale: 1, offsetMs: -61_000 });
+    assert.equal(clamped.cues[0].startMs, 0);
+    assert.equal(clamped.cues[0].endMs, 1000);
+    assert.equal(clamped.clampedCount, 1);
+
+    // Flexible time input
+    assert.equal(parseFlexibleTimeToMs('74.5'), 74_500);
+    assert.equal(parseFlexibleTimeToMs('1:14'), 74_000);
+    assert.equal(parseFlexibleTimeToMs('00:01:14,500'), 74_500);
+    assert.equal(parseFlexibleTimeToMs('abc'), null);
+
+    // Reference sync: equal counts copy timings exactly, text untouched
+    const ref = parseTimedSubtitle(srt.replace('00:01:00,000', '00:01:05,250'));
+    const copied = syncFromReference(parsed.cues, ref.cues);
+    assert.equal(copied.method, 'exact_copy');
+    assert.equal(copied.cues[0].startMs, 65_250);
+    assert.equal(copied.cues[1].text, 'مرحباً');
+
+    // Serialization produces valid SRT / VTT and round-trips
+    const out = serializeTimedSubtitle(shifted.cues, 'srt');
+    assert.ok(out.startsWith('1\n00:01:02,500 --> 00:01:04,500\n<i>Hello?</i>'));
+    const vtt = serializeTimedSubtitle(shifted.cues, 'vtt');
+    assert.ok(vtt.startsWith('WEBVTT\n\n00:01:02.500 --> 00:01:04.500'));
+    const roundTrip = parseTimedSubtitle(vtt);
+    assert.equal(roundTrip.format, 'vtt');
+    assert.equal(roundTrip.cues.length, 3);
+    assert.equal(roundTrip.cues[1].text, 'مرحباً');
   });
 });
