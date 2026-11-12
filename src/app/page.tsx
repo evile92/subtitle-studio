@@ -741,8 +741,8 @@ export default function HomePage() {
             )}
 
             {/* Primary Call-To-Action: Start Full-Context AI Translation */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-xs">
-              <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">
+            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-xs">
+              <div className="min-w-0 flex-1 text-xs sm:text-sm text-slate-600 dark:text-slate-400">
                 {uploadedFile ? (
                   uiLang === 'ar' ? (
                     <span className="flex flex-wrap items-center gap-1.5">
@@ -779,16 +779,16 @@ export default function HomePage() {
                 type="button"
                 disabled={!uploadedFile || isProcessingJob}
                 onClick={handleStartTranslation}
-                className="px-6 py-3.5 rounded-xl text-sm sm:text-base font-bold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-45 disabled:pointer-events-none text-white shadow-md shadow-indigo-600/20 flex items-center justify-center gap-2.5 transition-all"
+                className="shrink-0 whitespace-nowrap px-4 sm:px-6 py-3.5 rounded-xl text-xs sm:text-sm md:text-base font-bold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-45 disabled:pointer-events-none text-white shadow-md shadow-indigo-600/20 flex items-center justify-center gap-2 sm:gap-2.5 transition-all"
               >
                 {isProcessingJob ? (
                   <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <Loader2 className="w-5 h-5 shrink-0 animate-spin" />
                     <span>{t.actions.translating}</span>
                   </>
                 ) : (
                   <>
-                    <Play className="w-5 h-5 fill-current" />
+                    <Play className="w-5 h-5 shrink-0 fill-current" />
                     <span>{t.actions.startTranslation}</span>
                   </>
                 )}
