@@ -16,20 +16,9 @@ import type {
   AIProviderAdapter,
   ServerAIConfigState,
 } from './types';
+import { DEFAULT_MODELS, DEFAULT_MODEL_BY_PROVIDER } from './models';
 
-export const DEFAULT_MODELS: Record<AIProviderType, string[]> = {
-  gemini: [
-    'gemini-3.1-flash-lite',
-    'gemini-3.5-flash-lite',
-    'gemini-3.5-flash',
-    'gemini-2.5-flash',
-    'gemini-2.5-pro',
-  ],
-  deepseek: ['deepseek-flash', 'deepseek-chat', 'deepseek-reasoner'],
-  openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini'],
-  anthropic: ['claude-3-5-sonnet-latest', 'claude-3-7-sonnet-latest', 'claude-3-5-haiku-latest'],
-  custom: ['deepseek-chat', 'llama-3.3-70b-versatile', 'qwen-2.5-72b-instruct'],
-};
+export { DEFAULT_MODELS, DEFAULT_MODEL_BY_PROVIDER };
 
 function maskKey(key?: string): string | undefined {
   if (!key || key.trim().length < 6) return undefined;
@@ -78,7 +67,8 @@ export function resolveAIConfig(): {
 } {
   const provider = (process.env.AI_PROVIDER?.toLowerCase() as AIProviderType) || 'gemini';
 
-  const defaultModel = DEFAULT_MODELS[provider]?.[0] || 'gemini-3.5-flash-lite';
+  const defaultModel =
+    DEFAULT_MODEL_BY_PROVIDER[provider] || DEFAULT_MODEL_BY_PROVIDER.gemini;
   const model = process.env.AI_MODEL || defaultModel;
   const temperature = Number(process.env.AI_TEMPERATURE || 0.2);
   const maxRetries = Number(process.env.AI_MAX_RETRIES || 3);

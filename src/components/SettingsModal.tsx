@@ -13,6 +13,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
+import { DEFAULT_MODELS, DEFAULT_MODEL_BY_PROVIDER } from '@/lib/ai/models';
 import { ServerAIConfigState } from '@/lib/ai/types';
 import { AIProviderType } from '@/types/subtitle';
 import { validateCustomBaseUrl } from '@/lib/security/url-safety';
@@ -60,7 +61,7 @@ function SettingsModalContent({
     const initialModel =
       stored?.model ||
       aiConfig?.model ||
-      (initialProvider === 'deepseek' ? 'deepseek-flash' : 'gemini-3.1-flash-lite');
+      DEFAULT_MODEL_BY_PROVIDER[initialProvider];
     const keys = stored?.apiKeys || {};
 
     return {
@@ -91,22 +92,8 @@ function SettingsModalContent({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
-  const defaultModelsMap: Record<AIProviderType, string[]> = {
-    deepseek: ['deepseek-flash', 'deepseek-chat', 'deepseek-reasoner'],
-    gemini: [
-      'gemini-3.1-flash-lite',
-      'gemini-3.5-flash',
-      'gemini-3.5-flash-lite',
-      'gemini-2.5-flash',
-      'gemini-2.5-pro',
-    ],
-    openai: ['gpt-4o', 'gpt-4o-mini'],
-    anthropic: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
-    custom: ['llama-3.3-70b-instruct', 'mistral-large-latest'],
-  };
-
   const suggestedModels =
-    aiConfig?.availableModels?.[provider] || defaultModelsMap[provider] || [];
+    aiConfig?.availableModels?.[provider] || DEFAULT_MODELS[provider] || [];
 
   const handleProviderChange = (nextProvider: AIProviderType) => {
     setErrorMessage(null);
@@ -121,7 +108,7 @@ function SettingsModalContent({
 
     const defaultForNext =
       aiConfig?.availableModels?.[nextProvider]?.[0] ||
-      defaultModelsMap[nextProvider]?.[0];
+      DEFAULT_MODELS[nextProvider]?.[0];
     if (defaultForNext) {
       setModel(defaultForNext);
     }
@@ -172,7 +159,7 @@ function SettingsModalContent({
 
     const newStoredConfig: StoredUserAIConfig = {
       provider,
-      model: model.trim() || defaultModelsMap[provider]?.[0] || 'deepseek-flash',
+      model: model.trim() || DEFAULT_MODEL_BY_PROVIDER[provider],
       customBaseUrl: normalizedCustomUrl,
       temperature,
       maxRetries,

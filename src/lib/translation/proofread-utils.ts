@@ -19,6 +19,30 @@ export interface ProofreadResultSummary {
   changes: ProofreadChangeItem[];
 }
 
+function hasUnbalancedBrackets(text: string): boolean {
+  let roundBalance = 0;
+  let squareBalance = 0;
+  for (const ch of text) {
+    if (ch === '(') roundBalance += 1;
+    else if (ch === ')') roundBalance -= 1;
+    else if (ch === '[') squareBalance += 1;
+    else if (ch === ']') squareBalance -= 1;
+    if (roundBalance < 0 || squareBalance < 0) return true;
+  }
+  return roundBalance !== 0 || squareBalance !== 0;
+}
+
+function hasCollapsedSpeakerTurns(orig: string, trans: string): boolean {
+  const origTurns = orig
+    .split(/\r?\n/)
+    .filter((line) => /^\s*-\s+\S/.test(line)).length;
+  if (origTurns < 2) return false;
+  const transTurns = trans
+    .split(/\r?\n/)
+    .filter((line) => /^\s*-\s*\S/.test(line)).length;
+  return transTurns < 2;
+}
+
 /**
  * Strips formatting tags (`<i>`, `<b>`, `{\an8}`) and invisible BiDi characters
  * and checks if any 2+ letter Latin/English words remain in the translated text.
@@ -81,61 +105,24 @@ export function detectEntriesNeedingProofread(
           reasons.push('Duplicate consecutive word detected');
         }
 
-        // 4. Check for awkward literal machine calques or common spelling errors
+        // 4. Check for common spelling errors or awkward literal machine calques
         if (
-          /(يأخذ مكان|يصنع معنى|قطعة من الكعكة|هل تقوم بممازحتي|انشاء الله|ما اللعنة|بحق اللعنة|إثارة الدراما|تثير الدراما|أعدك بشدة|بهذه الطاقة|هذا اللعين|تلك اللعينة|تشفع لهذا|سأقدم استقالتي بعد أسبوعين|ضعفي الذي)/.test(
+          /(انشاء الله|يأخذ مكان|يصنع معنى|قطعة من الكعكة|هل تقوم بممازحتي|\bلاكن\b|\bهاذ[اه]\b|\bاللذ[ين]\b|\bاللتي\b)/.test(
             cleanTrans
           )
         ) {
-          reasons.push('Contains literal calque or unnatural Arabic phrasing');
+          reasons.push('Contains literal machine calque or common Arabic spelling mistake');
         }
 
-        // 5. Check for semantic confusion between modern slang, double-entendres, and sensory collocations
-        if (/\bcringey?\b/i.test(cleanOrig) && /(مقزز|مقرف)/.test(cleanTrans)) {
-          reasons.push("'Cringey' mistranslated as 'مقزز' instead of 'محرج / يثير الحرج'");
+        // 5. Check for unbalanced brackets or collapsed multi-speaker dash dialogue turns
+        if (hasUnbalancedBrackets(cleanTrans)) {
+          reasons.push('Unbalanced parentheses or square brackets detected');
         }
-        if (/\brock hard\b/i.test(cleanOrig) && /(متحمس|شغوف)/.test(cleanTrans)) {
-          reasons.push("'Rock hard' comedic double-entendre sanitized/flattened to 'متحمس'");
+        if (hasCollapsedSpeakerTurns(cleanOrig, cleanTrans)) {
+          reasons.push('Multi-speaker dialogue dash markers collapsed or missing');
         }
-        if (/\bvulnerable\b/i.test(cleanOrig) && /(ضعف|ضعفي)/.test(cleanTrans)) {
-          reasons.push("'Vulnerable' translated literally as weakness instead of emotional openness ('كشفت لك نفسي / فتحت لك قلبي')");
-        }
-        if (/\bstale\b/i.test(cleanOrig) && /(قديم|قديمة)/.test(cleanTrans)) {
-          reasons.push("'Stale' food adjective translated as 'قديم' instead of 'بايت / غير طازج'");
-        }
-        if (/\bcasual\b/i.test(cleanOrig) && /(سطحي|سطحية)/.test(cleanTrans)) {
-          reasons.push("'Casual' relationship translated as 'سطحية' instead of 'غير جدية / غير ملزمة'");
-        }
-        if (/\btoo good\b/i.test(cleanOrig) && /(أفضل من ذلك)/.test(cleanTrans)) {
-          reasons.push("'Too good' over-complicated into 'أفضل من ذلك بكثير' instead of natural 'رائعة جداً / تفوق الوصف'");
-        }
-        if (/\bfreaky\b/i.test(cleanOrig) && /(جامحة|الجامحة)/.test(cleanTrans)) {
-          reasons.push("'Freaky' nickname mistranslated as 'الجامحة' instead of 'غريبة / غريبة الأطوار'");
-        }
-        if (/\bcamaraderie\b/i.test(cleanOrig) && /(مرح|المرح)/.test(cleanTrans)) {
-          reasons.push("'Camaraderie' mistranslated as 'مرح' instead of 'روح الرفقة / الألفة والتكاتف'");
-        }
-        if (/\bhit me\b/i.test(cleanOrig) && /(أثر في|أثرت في)/.test(cleanTrans)) {
-          reasons.push("'Hit me yet' mistranslated as external impact 'أثر فيّ' instead of cognitive processing 'استوعبت الأمر بعد'");
-        }
-
-        // 6. Check for high-risk English idioms/slang that require contextual subtext verification
-        if (
-          /\b(putting in my two weeks|two weeks'?\s*notice|wasted|hooking up|hooked up|hook up|tease her|tease him|makes up for that shit|seizure|super promise|rock hard|cringey|vulnerable|stale|super casual|too good|freaky|camaraderie|hit me yet|love me)\b/i.test(
-            cleanOrig
-          )
-        ) {
-          reasons.push('Contains colloquial idiom/slang/innuendo requiring contextual subtext verification');
-        }
-
-        // 7. Check for dual-speaker turn switches ("- ") or direct second-person address prone to speaker/addressee gender reversal
-        if (
-          (cleanOrig.includes('- ') && /\b(tell me|you want|can I do|with me)\b/i.test(cleanOrig)) ||
-          /(أخبريني|تريدينني|تستطيع حبي)/.test(cleanTrans) ||
-          (/\b(why can't you love me|can't you love me)\b/i.test(cleanOrig) && /(تستطيع|تحبني)/.test(cleanTrans))
-        ) {
-          reasons.push('Verify speaker-to-addressee gender agreement (التذكير والتأنيث للمخاطب في الحوارات السريعة)');
-        }
+      } else if (hasUnbalancedBrackets(cleanTrans)) {
+        reasons.push('Unbalanced parentheses or square brackets detected');
       }
     }
 

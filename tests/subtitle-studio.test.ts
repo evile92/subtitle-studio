@@ -45,6 +45,16 @@ import {
   validateCustomBaseUrl,
 } from '@/lib/security/url-safety';
 import { applyUserConfigToAIState, maskApiKey } from '@/lib/storage/client-config';
+import { DEFAULT_MODELS as SHARED_DEFAULT_MODELS } from '@/lib/ai/models';
+import {
+  deleteClientJob,
+  flushClientJobPersistence,
+  getClientJob,
+  hydrateClientJobsFromIndexedDB,
+  listClientJobSummaries,
+  resetClientJobStoreForTesting,
+  saveClientJob,
+} from '@/lib/storage/client-job-store';
 import type { TranslationJob, TranslationPreferencesConfig } from '@/types/subtitle';
 import {
   applyLinearTransform,
@@ -1039,5 +1049,200 @@ Wait for me at the gate.
     assert.equal(repairedText.includes('المقهى'), true);
     // '$' replacement pattern is treated literally
     assert.equal(repairedText.includes('$100'), true);
+  });
+
+  it('Test 14: Phase 3 Improvements — shared models, validation i18n parity, general proofread heuristics, and IndexedDB persistence', async () => {
+    // 1. Single shared source of truth for provider models across server & client modules
+    assert.deepEqual(providersModule.DEFAULT_MODELS, SHARED_DEFAULT_MODELS);
+    const clientState = applyUserConfigToAIState(null, null);
+    assert.deepEqual(clientState.availableModels, SHARED_DEFAULT_MODELS);
+
+    // 2. Extended bilingual dictionary parity
+    assert.deepEqual(
+      Object.keys(UI_TRANSLATIONS.en.actions),
+      Object.keys(UI_TRANSLATIONS.ar.actions)
+    );
+    assert.deepEqual(
+      Object.keys(UI_TRANSLATIONS.en.upload),
+      Object.keys(UI_TRANSLATIONS.ar.upload)
+    );
+    assert.deepEqual(
+      Object.keys(UI_TRANSLATIONS.en.workspace.validation),
+      Object.keys(UI_TRANSLATIONS.ar.workspace.validation)
+    );
+
+    // 3. Generic proofread heuristics without film-specific false positives
+    const proofreadInput = parseSrtContent(
+      [
+        '1\n00:00:01,000 --> 00:00:03,000\nHello (friend)\n',
+        '2\n00:00:04,000 --> 00:00:06,000\n- Are you ready?\n- Yes, I am.\n',
+        '3\n00:00:07,000 --> 00:00:09,000\nMy friend stayed very casual today.\n',
+      ].join('\n')
+    ).entries;
+    proofreadInput[0]!.translatedText = 'مرحباً (يا صديقي'; // Unbalanced bracket
+    proofreadInput[1]!.translatedText = 'هل أنت مستعد نعم أنا كذلك'; // Collapsed dual-speaker turns
+    proofreadInput[2]!.translatedText = 'بقي صديقي هادئاً جداً اليوم.'; // Valid line with innocent English word "casual"
+
+    const proofreadScan = detectEntriesNeedingProofread(proofreadInput, 'ar');
+    assert.deepEqual(proofreadScan.sequences, [1, 2]);
+    assert.equal(proofreadScan.sequences.includes(3), false);
+
+    // 4. IndexedDB persistence, localStorage mirror cap, reload hydration, and delete persistence
+    const backingIdb = new Map<string, TranslationJob>();
+    const lsMap = new Map<string, string>();
+    const mockLocalStorage = {
+      getItem: (k: string) => lsMap.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        lsMap.set(k, v);
+      },
+      removeItem: (k: string) => {
+        lsMap.delete(k);
+      },
+    };
+
+    const makeIdbRequest = <T>(run: () => T) => {
+      const req: {
+        result: T | undefined;
+        error: null;
+        onsuccess: ((ev: Event) => void) | null;
+        onerror: ((ev: Event) => void) | null;
+      } = { result: undefined, error: null, onsuccess: null, onerror: null };
+      queueMicrotask(() => {
+        req.result = run();
+        req.onsuccess?.(new Event('success'));
+      });
+      return req;
+    };
+
+    const mockIndexedDb = {
+      open: () => {
+        const db = {
+          objectStoreNames: { contains: () => true },
+          createObjectStore: () => ({}),
+          onversionchange: null,
+          close: () => {},
+          transaction: () => {
+            const tx: {
+              oncomplete: ((ev: Event) => void) | null;
+              onabort: ((ev: Event) => void) | null;
+              onerror: ((ev: Event) => void) | null;
+              error: null;
+              objectStore: () => unknown;
+            } = {
+              oncomplete: null,
+              onabort: null,
+              onerror: null,
+              error: null,
+              objectStore: () => ({
+                put: (item: TranslationJob) => {
+                  backingIdb.set(item.id, item);
+                  return makeIdbRequest(() => item.id);
+                },
+                delete: (id: string) => {
+                  backingIdb.delete(id);
+                  return makeIdbRequest(() => undefined);
+                },
+                getAll: () => makeIdbRequest(() => Array.from(backingIdb.values())),
+              }),
+            };
+            queueMicrotask(() => {
+              tx.oncomplete?.(new Event('complete'));
+            });
+            return tx;
+          },
+        };
+        const openReq: {
+          result: typeof db;
+          error: null;
+          onupgradeneeded: ((ev: Event) => void) | null;
+          onsuccess: ((ev: Event) => void) | null;
+          onerror: ((ev: Event) => void) | null;
+        } = {
+          result: db,
+          error: null,
+          onupgradeneeded: null,
+          onsuccess: null,
+          onerror: null,
+        };
+        queueMicrotask(() => {
+          openReq.onsuccess?.(new Event('success'));
+        });
+        return openReq;
+      },
+    };
+
+    const prevWindow = (globalThis as { window?: unknown }).window;
+    const prevLs = (globalThis as { localStorage?: unknown }).localStorage;
+    const prevIdb = (globalThis as { indexedDB?: unknown }).indexedDB;
+
+    try {
+      resetClientJobStoreForTesting();
+      (globalThis as { window?: unknown }).window = globalThis;
+      (globalThis as { localStorage?: unknown }).localStorage = mockLocalStorage;
+      (globalThis as { indexedDB?: unknown }).indexedDB = mockIndexedDb;
+
+      for (let i = 1; i <= 5; i++) {
+        saveClientJob({
+          id: `idb_job_${i}`,
+          fileName: `movie_${i}.srt`,
+          fileSize: 1024,
+          format: 'srt',
+          sourceLanguage: 'en',
+          detectedSourceLanguage: 'en',
+          targetLanguage: 'ar',
+          arabicDialect: 'msa',
+          preferences: DEFAULT_PREFS,
+          stage: 'completed',
+          progressPercent: 100,
+          translatedCount: 1,
+          totalEntries: 1,
+          currentBatch: 1,
+          totalBatches: 1,
+          entries: parseSrtContent('1\n00:00:01,000 --> 00:00:02,000\nHi\n').entries,
+          glossary: [],
+          batches: [],
+          logs: [],
+          warnings: [],
+          createdAt: new Date(1000 * i).toISOString(),
+          updatedAt: new Date(1000 * i).toISOString(),
+        });
+      }
+      await flushClientJobPersistence();
+
+      // IndexedDB holds all 5 jobs, while localStorage mirror stays capped <= 3
+      assert.equal(backingIdb.size, 5);
+      const rawMirror = JSON.parse(lsMap.get('subtitle_studio_client_jobs_v1') || '{}');
+      assert.ok(Object.keys(rawMirror).length <= 3);
+
+      // Delete job 2 and confirm removal propagates to IndexedDB
+      deleteClientJob('idb_job_2');
+      await flushClientJobPersistence();
+      assert.equal(backingIdb.has('idb_job_2'), false);
+
+      // Simulate cold browser reload from IndexedDB
+      resetClientJobStoreForTesting();
+      await hydrateClientJobsFromIndexedDB();
+      const restoredSummaries = listClientJobSummaries();
+      assert.equal(restoredSummaries.length, 4);
+      assert.ok(getClientJob('idb_job_1'));
+      assert.equal(getClientJob('idb_job_2'), null);
+    } finally {
+      resetClientJobStoreForTesting();
+      if (prevWindow === undefined) {
+        delete (globalThis as { window?: unknown }).window;
+      } else {
+        (globalThis as { window?: unknown }).window = prevWindow;
+      }
+      if (prevLs === undefined) {
+        delete (globalThis as { localStorage?: unknown }).localStorage;
+      } else {
+        (globalThis as { localStorage?: unknown }).localStorage = prevLs;
+      }
+      if (prevIdb === undefined) {
+        delete (globalThis as { indexedDB?: unknown }).indexedDB;
+      } else {
+        (globalThis as { indexedDB?: unknown }).indexedDB = prevIdb;
+      }
+    }
   });
 });

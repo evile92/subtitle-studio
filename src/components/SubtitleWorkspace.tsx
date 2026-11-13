@@ -381,13 +381,22 @@ export function SubtitleWorkspace({
       } catch {
         throw new Error(
           res.status === 504
-            ? 'Server request timed out. Please try again.'
-            : `Server returned an unexpected response (${res.status}).`
+            ? uiLang === 'ar'
+              ? 'انتهت مهلة الطلب على الخادم. يرجى المحاولة مجدداً.'
+              : 'Server request timed out. Please try again.'
+            : uiLang === 'ar'
+              ? `أعاد الخادم استجابة غير متوقعة (${res.status}).`
+              : `Server returned an unexpected response (${res.status}).`
         );
       }
 
       if (!res.ok) {
-        setRegenError(data.error || 'Failed to regenerate subtitle line.');
+        setRegenError(
+          data.error ||
+            (uiLang === 'ar'
+              ? 'تعذر إعادة توليد هذا السطر.'
+              : 'Failed to regenerate subtitle line.')
+        );
         return;
       }
 
@@ -435,7 +444,11 @@ export function SubtitleWorkspace({
       setCustomLineInstruction('');
     } catch (err) {
       setRegenError(
-        err instanceof Error ? err.message : 'Failed to regenerate subtitle.'
+        err instanceof Error
+          ? err.message
+          : uiLang === 'ar'
+            ? 'فشلت إعادة توليد السطر.'
+            : 'Failed to regenerate subtitle.'
       );
     } finally {
       setRegeneratingSeq(null);
@@ -593,14 +606,21 @@ export function SubtitleWorkspace({
         } catch {
           throw new Error(
             res.status === 504
-              ? `Batch ${bIdx + 1}/${totalBatches} timed out on the server. Previously completed proofread batches were saved.`
-              : `Server returned an unexpected response on batch ${bIdx + 1}/${totalBatches}.`
+              ? uiLang === 'ar'
+                ? `انتهت مهلة الدفعة ${bIdx + 1}/${totalBatches} على الخادم. تم حفظ الدفعات السابقة.`
+                : `Batch ${bIdx + 1}/${totalBatches} timed out on the server. Previously completed proofread batches were saved.`
+              : uiLang === 'ar'
+                ? `أعاد الخادم استجابة غير متوقعة للدفعة ${bIdx + 1}/${totalBatches}.`
+                : `Server returned an unexpected response on batch ${bIdx + 1}/${totalBatches}.`
           );
         }
 
         if (!res.ok) {
           throw new Error(
-            data.error || `Failed to proofread batch ${bIdx + 1}/${totalBatches}.`
+            data.error ||
+              (uiLang === 'ar'
+                ? `تعذر تدقيق الدفعة ${bIdx + 1}/${totalBatches}.`
+                : `Failed to proofread batch ${bIdx + 1}/${totalBatches}.`)
           );
         }
 
@@ -682,7 +702,11 @@ export function SubtitleWorkspace({
       setShowProofreadDetails(true);
     } catch (err) {
       setRegenError(
-        err instanceof Error ? err.message : 'Failed to run AI proofreading.'
+        err instanceof Error
+          ? err.message
+          : uiLang === 'ar'
+            ? 'تعذر تشغيل التدقيق اللغوي الذكي.'
+            : 'Failed to run AI proofreading.'
       );
     } finally {
       setIsProofreading(false);

@@ -1,5 +1,6 @@
 import type { AIProviderType, UserClientAIConfig } from '@/types/subtitle';
 import type { ServerAIConfigState } from '@/lib/ai/types';
+import { DEFAULT_MODELS, DEFAULT_MODEL_BY_PROVIDER } from '@/lib/ai/models';
 
 export const USER_AI_CONFIG_STORAGE_KEY = 'subtitle_studio_user_ai_config';
 
@@ -62,22 +63,14 @@ export function applyUserConfigToAIState(
   stored: StoredUserAIConfig | null
 ): ServerAIConfigState {
   const provider = stored?.provider || serverState?.provider || 'gemini';
-  const model = stored?.model || serverState?.model || 'gemini-3.1-flash-lite';
+  const model =
+    stored?.model ||
+    serverState?.model ||
+    DEFAULT_MODEL_BY_PROVIDER[provider] ||
+    DEFAULT_MODEL_BY_PROVIDER.gemini;
   const userKey = stored?.apiKeys?.[provider]?.trim();
 
-  const availableModels = serverState?.availableModels || {
-    gemini: [
-      'gemini-3.1-flash-lite',
-      'gemini-3.5-flash',
-      'gemini-3.5-flash-lite',
-      'gemini-2.5-flash',
-      'gemini-2.5-pro',
-    ],
-    deepseek: ['deepseek-flash', 'deepseek-chat', 'deepseek-reasoner'],
-    openai: ['gpt-4o', 'gpt-4o-mini'],
-    anthropic: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
-    custom: ['llama-3.3-70b-instruct', 'mistral-large-latest'],
-  };
+  const availableModels = serverState?.availableModels || DEFAULT_MODELS;
 
   if (userKey) {
     return {
@@ -104,7 +97,7 @@ export function applyUserConfigToAIState(
 
   return {
     provider: stored?.provider || 'gemini',
-    model: stored?.model || 'gemini-3.1-flash-lite',
+    model: stored?.model || DEFAULT_MODEL_BY_PROVIDER[provider],
     temperature: stored?.temperature ?? 0.2,
     maxRetries: stored?.maxRetries ?? 3,
     customBaseUrl: stored?.customBaseUrl,

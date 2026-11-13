@@ -29,7 +29,7 @@ export function ValidationReportView({
   if (!report) {
     return (
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 text-center text-sm text-slate-500">
-        Validation report will be generated automatically once translation completes.
+        {t.workspace.validation.emptyNotice}
       </div>
     );
   }
@@ -108,8 +108,16 @@ export function ValidationReportView({
               <Hash className="w-3.5 h-3.5 text-emerald-500" />
               <span>{t.workspace.validation.sequenceMatch}</span>
             </div>
-            <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 mt-1">
-              {report.sequenceIntegrityMatch ? '100% Exact' : 'Mismatch'}
+            <p
+              className={`text-sm font-bold mt-1 ${
+                report.sequenceIntegrityMatch
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-amber-600 dark:text-amber-400'
+              }`}
+            >
+              {report.sequenceIntegrityMatch
+                ? t.workspace.validation.exactMatch
+                : t.workspace.validation.sequenceMismatch}
             </p>
           </div>
 
@@ -118,8 +126,16 @@ export function ValidationReportView({
               <Clock className="w-3.5 h-3.5 text-emerald-500" />
               <span>{t.workspace.validation.timestampMatch}</span>
             </div>
-            <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 mt-1">
-              {report.timestampIntegrityMatch ? '100% Exact' : 'Modified'}
+            <p
+              className={`text-sm font-bold mt-1 ${
+                report.timestampIntegrityMatch
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-amber-600 dark:text-amber-400'
+              }`}
+            >
+              {report.timestampIntegrityMatch
+                ? t.workspace.validation.exactMatch
+                : t.workspace.validation.timestampModified}
             </p>
           </div>
 
@@ -158,15 +174,14 @@ export function ValidationReportView({
       {/* Detailed Issues & Auto-Repair Log */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-xs space-y-3">
         <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-          Detailed QA Inspection Log ({report.issues.length})
+          {t.workspace.validation.detailedLogTitle} ({report.issues.length})
         </h4>
 
         {report.issues.length === 0 ? (
           <div className="p-6 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/50 flex items-center gap-3 text-xs sm:text-sm text-emerald-800 dark:text-emerald-300">
             <CheckCircle2 className="w-5 h-5 shrink-0" />
             <span>
-              Zero structural, formatting, or terminology discrepancies detected across all{' '}
-              {report.originalEntryCount} subtitle entries.
+              {t.workspace.validation.allCleanNotice} ({report.originalEntryCount})
             </span>
           </div>
         ) : (
@@ -193,7 +208,13 @@ export function ValidationReportView({
                             : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
                       }`}
                     >
-                      {issue.autoRepaired ? 'Auto-Repaired' : issue.severity}
+                      {issue.autoRepaired
+                        ? t.workspace.validation.autoRepairedBadge
+                        : issue.severity === 'error'
+                          ? t.workspace.validation.errorBadge
+                          : issue.severity === 'warning'
+                            ? t.workspace.validation.warningBadge
+                            : t.workspace.validation.infoBadge}
                     </span>
                     <span className="font-semibold text-slate-900 dark:text-white">
                       {issue.message}

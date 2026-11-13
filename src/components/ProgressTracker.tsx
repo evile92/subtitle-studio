@@ -6,6 +6,7 @@ import {
   Loader2,
   AlertTriangle,
   Play,
+  Square,
   FileEdit,
   ShieldCheck,
   Terminal,
@@ -20,6 +21,8 @@ import { getLanguageName } from '@/lib/languages';
 interface ProgressTrackerProps {
   job: TranslationJob;
   isProcessing: boolean;
+  isCancelling?: boolean;
+  onCancelJob?: () => void;
   onResumeJob: () => void;
   onOpenWorkspace: () => void;
   onOpenSettings: () => void;
@@ -39,6 +42,8 @@ const ORDERED_STAGES: PipelineStage[] = [
 export function ProgressTracker({
   job,
   isProcessing,
+  isCancelling = false,
+  onCancelJob,
   onResumeJob,
   onOpenWorkspace,
   onOpenSettings,
@@ -87,6 +92,24 @@ export function ProgressTracker({
             </span>
           </div>
 
+          {isProcessing && onCancelJob && (
+            <button
+              type="button"
+              disabled={isCancelling}
+              onClick={onCancelJob}
+              className="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white shadow-xs flex items-center gap-2 transition-colors"
+            >
+              {isCancelling ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Square className="w-4 h-4 fill-current" />
+              )}
+              <span>
+                {isCancelling ? t.actions.cancelling : t.actions.cancelTranslation}
+              </span>
+            </button>
+          )}
+
           {job.stage === 'completed' && (
             <button
               type="button"
@@ -98,7 +121,7 @@ export function ProgressTracker({
             </button>
           )}
 
-          {job.stage === 'failed' && !isProcessing && (
+          {(job.stage === 'failed' || job.stage === 'paused') && !isProcessing && (
             <button
               type="button"
               onClick={onResumeJob}
@@ -115,7 +138,7 @@ export function ProgressTracker({
       <div className="w-full h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
         <div
           className={`h-full transition-all duration-500 rounded-full ${
-            job.stage === 'failed'
+            job.stage === 'failed' || job.stage === 'paused'
               ? 'bg-amber-500'
               : job.stage === 'completed'
                 ? 'bg-emerald-500'

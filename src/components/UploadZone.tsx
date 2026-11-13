@@ -73,7 +73,9 @@ export function UploadZone({
       if (!localParsed.isValid) {
         setErrorMessage(
           localParsed.errors[0] ||
-            'Invalid or corrupted SRT file. Please verify the file contains valid timestamps and dialogue.'
+            (uiLang === 'ar'
+              ? 'ملف SRT غير صالح أو تالف. يرجى التأكد من احتوائه على توقيتات ونصوص صحيحة.'
+              : 'Invalid or corrupted SRT file. Please verify the file contains valid timestamps and dialogue.')
         );
         setIsValidating(false);
         return;
@@ -89,7 +91,11 @@ export function UploadZone({
         const data = await res.json();
         if (!res.ok || !data.isValid) {
           setErrorMessage(
-            data?.errors?.[0] || data?.error || 'Server rejected the uploaded SRT file.'
+            data?.errors?.[0] ||
+              data?.error ||
+              (uiLang === 'ar'
+                ? 'تعذر التحقق من صحة ملف SRT المرفوع.'
+                : 'Server rejected the uploaded SRT file.')
           );
           setIsValidating(false);
           return;
@@ -260,7 +266,7 @@ export function UploadZone({
               <UploadCloud className="w-6 h-6" />
             </div>
             <p className="text-sm sm:text-base font-semibold text-slate-900 dark:text-white">
-              {isValidating ? 'Validating SRT structure...' : t.upload.dropTitle}
+              {isValidating ? t.upload.validating : t.upload.dropTitle}
             </p>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
               {t.upload.dropSubtitle}

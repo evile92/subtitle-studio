@@ -116,7 +116,11 @@ export default function HomePage() {
   const setActiveJob = setActiveJobOverride;
 
   const [isProcessingJob, setIsProcessingJob] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const isPipelineRunningRef = useRef(false);
+  const pipelineAbortControllerRef = useRef<AbortController | null>(null);
+  const userAbortedRef = useRef(false);
+  const deletedDuringRunIdsRef = useRef<Set<string>>(new Set());
   const [startError, setStartError] = useState<string | null>(null);
 
   // AI Provider Configuration & Modals
@@ -161,8 +165,19 @@ export default function HomePage() {
     const userAIConfig = getActiveUserClientAIConfig() || job.userAIConfig;
     job.userAIConfig = userAIConfig;
 
+    const controller = new AbortController();
+    pipelineAbortControllerRef.current = controller;
+    userAbortedRef.current = false;
+    deletedDuringRunIdsRef.current.delete(job.id);
+    setIsCancelling(false);
     setIsProcessingJob(true);
     setActiveJob({ ...job });
+
+    const throwIfAborted = () => {
+      if (controller.signal.aborted) {
+        throw new DOMException('Aborted by user', 'AbortError');
+      }
+    };
 
     try {
       const effectiveSourceLang =
@@ -202,6 +217,7 @@ export default function HomePage() {
         } = {};
 
         for (let sIdx = 0; sIdx < segments.length; sIdx++) {
+          throwIfAborted();
           const seg = segments[sIdx];
           const firstSeq = seg[0]?.sequence ?? 1;
           const lastSeq = seg[seg.length - 1]?.sequence ?? seg.length;
@@ -221,6 +237,7 @@ export default function HomePage() {
           const segRes = await fetch('/api/pipeline/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
             body: JSON.stringify({
               mode: 'segment',
               segmentEntries: seg,
@@ -259,6 +276,7 @@ export default function HomePage() {
         }
 
         if (segments.length > 1) {
+          throwIfAborted();
           job.progressPercent = 23;
           appendClientJobLog(
             job,
@@ -272,6 +290,7 @@ export default function HomePage() {
           const synthRes = await fetch('/api/pipeline/analyze', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
             body: JSON.stringify({
               mode: 'synthesize',
               partialAnalyses,
@@ -365,6 +384,7 @@ export default function HomePage() {
       setActiveJob({ ...job });
 
       for (let bIdx = 0; bIdx < job.batches.length; bIdx++) {
+        throwIfAborted();
         const batch = job.batches[bIdx];
         job.currentBatch = bIdx + 1;
 
@@ -397,6 +417,7 @@ export default function HomePage() {
         const batchRes = await fetch('/api/pipeline/translate-batch', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({
             batchEntries,
             precedingEntries,
@@ -543,22 +564,52 @@ export default function HomePage() {
       setActiveJob({ ...job });
       setActiveView('workspace');
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Translation pipeline interrupted.';
-      job.stage = 'failed';
-      job.errorMessage = message;
+      if (deletedDuringRunIdsRef.current.has(job.id)) {
+        return;
+      }
+
+      for (const b of job.batches) {
+        if (b.status === 'processing') {
+          b.status = 'pending';
+        }
+      }
+
+      const wasAborted =
+        userAbortedRef.current ||
+        controller.signal.aborted ||
+        (err instanceof Error && err.name === 'AbortError');
       const completedCount = job.batches.filter(
         (b) => b.status === 'completed'
       ).length;
-      appendClientJobLog(
-        job,
-        'failed',
-        `Pipeline interrupted: ${message}. Completed batches (${completedCount}/${job.batches.length}) are safely saved in your browser and can be resumed without losing any tokens.`,
-        'error'
-      );
+
+      if (wasAborted) {
+        job.stage = 'paused';
+        job.errorMessage = undefined;
+        appendClientJobLog(
+          job,
+          'paused',
+          `Translation paused by user. Completed batches (${completedCount}/${job.batches.length}) are saved and ready to resume anytime.`,
+          'warning'
+        );
+      } else {
+        const message =
+          err instanceof Error ? err.message : 'Translation pipeline interrupted.';
+        job.stage = 'failed';
+        job.errorMessage = message;
+        appendClientJobLog(
+          job,
+          'failed',
+          `Pipeline interrupted: ${message}. Completed batches (${completedCount}/${job.batches.length}) are safely saved in your browser and can be resumed without losing any tokens.`,
+          'error'
+        );
+      }
+
       saveClientJob(job);
       setActiveJob({ ...job });
     } finally {
+      pipelineAbortControllerRef.current = null;
+      userAbortedRef.current = false;
+      setIsCancelling(false);
       isPipelineRunningRef.current = false;
       setIsProcessingJob(false);
     }
@@ -621,7 +672,19 @@ export default function HomePage() {
     }
   };
 
+  const handleCancelTranslation = () => {
+    if (!isPipelineRunningRef.current || !pipelineAbortControllerRef.current) return;
+    userAbortedRef.current = true;
+    setIsCancelling(true);
+    pipelineAbortControllerRef.current.abort();
+  };
+
   const handleDeleteJob = async (jobId: string) => {
+    if (isPipelineRunningRef.current && activeJob?.id === jobId) {
+      deletedDuringRunIdsRef.current.add(jobId);
+      userAbortedRef.current = true;
+      pipelineAbortControllerRef.current?.abort();
+    }
     deleteClientJob(jobId);
     if (activeJob?.id === jobId) {
       setActiveJob(null);
@@ -828,6 +891,8 @@ export default function HomePage() {
           <ProgressTracker
             job={activeJob}
             isProcessing={isProcessingJob}
+            isCancelling={isCancelling}
+            onCancelJob={handleCancelTranslation}
             onResumeJob={() => handleResumeJob(activeJob.id)}
             onOpenWorkspace={() => setActiveView('workspace')}
             onOpenSettings={() => setSettingsOpen(true)}
