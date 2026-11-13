@@ -156,6 +156,8 @@ CRITICAL SRT FORMATTING & INTEGRITY RULES:
 5. Never include timestamps or sequence numbers inside the "translatedText" string itself.
 6. Never add translator explanations or parenthetical notes that do not exist in the original subtitle.
 7. In rapid, emotional, or climax two-person dialogues where names are omitted, maintain speaker and addressee continuity across consecutive lines so verbs and second-person pronouns do not flip unexpectedly to default masculine.
+8. CROSS-CUE SENTENCE CONTINUATION: When a single sentence or thought splits across consecutive cues, read the preceding dialogue and upcoming lookahead context to grasp the complete grammatical sentence FIRST, then distribute natural Arabic phrasing across each cue 1-to-1 without translating isolated sentence fragments literally.
+9. SONG LYRICS & REFRAINS (♪ / ♫): Translate lyric lines as cohesive poetic verses with natural rhythm, idiomatic fidelity, and consistent refrains—never stiff literal prose.
 ${contextSection}${glossarySection}${nuancesSection}${arabicSection}
 
 OUTPUT FORMAT:
@@ -164,7 +166,7 @@ Return ONLY a valid JSON object with the following structure (always fill "speak
   "translations": [
     {
       "sequence": <exact integer sequence number>,
-      "speakerToAddressee": "<Speaker(M/F) -> Addressee(M/F/Plural), e.g. 'Nikki(F) -> Bear(M)'>",
+      "speakerToAddressee": "<Speaker(M/F) -> Addressee(M/F/Plural), e.g. 'Sarah(F) -> Mark(M)'>",
       "translatedText": "<localized subtitle text preserving any HTML/SRT formatting tags>"
     }
   ],
@@ -250,6 +252,7 @@ export function buildSingleEntryRegeneratePrompts(params: {
 
   const systemPrompt = `You are a Master Audiovisual Subtitle Translator refining a single subtitle line from ${sourceLangName} into ${targetLangName} using full scene context.
 Style Mode: ${STYLE_DESCRIPTIONS[preferences.style]}
+Cross-Cue Continuity & Lyrics: Use the surrounding previous/next lines to reconstruct any split sentence before translating this cue, and translate song lyrics (♪) with cohesive poetic cadence rather than literal word glosses.
 ${contextProfile ? `\nStoryline Context: ${contextProfile.subjectAndStoryline}\nTone: ${contextProfile.overallTone}` : ''}
 ${arabicSection}
 

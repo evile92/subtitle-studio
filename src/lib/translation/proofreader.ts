@@ -90,7 +90,7 @@ const ProofreadBatchResponseSchema = z.preprocess((raw) => {
   corrections: z.array(ProofreadEntrySchema),
 }));
 
-function buildProofreadBatchPrompts(params: {
+export function buildProofreadBatchPrompts(params: {
   targetEntries: SubtitleEntry[];
   allEntriesMap: Map<number, SubtitleEntry>;
   reasonsBySequence: Record<number, string[]>;
@@ -143,32 +143,25 @@ Carefully inspect each subtitle entry's "originalText" and "currentTranslation" 
 STRICT PROOFREADING & CORRECTION RULES:
 1. AUDIT SPEAKER & ADDRESSEE GENDER AGREEMENT (التذكير والتأنيث للمتحدث والمخاطب):
    - Check the surrounding dialogue context (-2, -1, +1, +2) to see WHO is speaking and WHOM they are addressing.
-   - VOCATIVE INVERSION CHECK: If the previous line says e.g. "We have to take space from each other, Nikki!" or "I just want you to be Nikki", the named person ("Nikki", female) is the ADDRESSEE of that line. Therefore, when Nikki replies in the current line ("Just tell me what I can do" / "I'll be anything you want me to be"), she is addressing the MALE speaker! Fix feminine addressee errors like "أخبريني" -> "أخبرني" and "تريدينني" -> "تريدني".
-   - SCENE CONTINUITY IN RAPID/CLIMAX ARGUMENTS: In intense rapid confrontations where character names are omitted in every line (e.g. heated climactic dialogue where a male character confronts a female character like Nikki), RETAIN the female addressee throughout the scene! Correct lines like "Why can't you love me?!" from masculine "لماذا لا تستطيع حبي؟!" or "لماذا لا تحبني؟!" to feminine addressee: "لماذا لا تستطيعين أن تحبيني؟!" / "لماذا لا تحبينني؟!".
-2. FIX LITERAL IDIOM MISTRANSLATIONS, SLANG CONFUSION & RELATIONSHIP SUBTEXT:
-   - Fix idioms and modern slang translated word-for-word instead of by intended meaning:
-     * Simplicity over complication: "She's too good" is straightforward high praise ("إنها رائعة جداً / تفوق الوصف"), NEVER leave it as awkward "إنها أفضل من ذلك بكثير".
-     * Cognitive absorption: "I don't think it's, like, hit me yet" / "when it does" refers to cognitive/emotional processing ("لا أظن أنني استوعبت الأمر بعد" / "عندما تستوعب ذلك"), NOT external impact like "أثر فيّ بعد".
-     * Nicknames & backstory polysemy: "Freaky Nikki" when originating from school bullying/alienation means "نيكي غريبة الأطوار / نيكي الغريبة", NOT sexually wild "نيكي الجامحة".
-     * Team solidarity: "of camaraderie and skill" means mutual fellowship and solidarity ("روح الرفقة والألفة والمهارة"), NOT playfulness or "المرح".
-     * "Cringey" vs "Gross": If "cringey" was translated as "مقزز / مقرف", correct it to "محرج للغاية / يثير الحرج الشديد" (reserve "مقزز" for "gross").
-     * Raunchy/adult double-entendres: "I wake up every Wednesday rock hard, thinking about trivia" — do NOT sanitize to innocent enthusiasm like "متحمساً جداً"! Restore the comedic adult innuendo ("منتصباً من فرط الحماس / في حالة انتصاب تام").
-     * Emotional vulnerability: "Do you know how vulnerable I just got?" — do NOT use mechanical "مدى ضعفي الذي ظهرت به للتو"! Translate naturally: "هل تدرك كم كشفت لك عن نفسي للتو؟ / هل تدرك كم فتحت لك قلبي للتو؟".
-     * Sensory food adjectives: "Stale" for bread/pastries/food must be "بايت / غير طازج" (e.g., "Slightly stale, but the butter makes up for that shit" -> "بايت قليلاً، لكن الزبدة تعوّض ذلك"), NEVER literal "قديم".
-     * Relationship commitment: "Super casual and not romantic" must be "علاقة غير جدية إطلاقاً وليست عاطفية / عابرة تماماً", NEVER "سطحية".
-     * Workplace idioms: "I'm putting in my two weeks" -> "سأبلغهم بأنني سأترك العمل بعد أسبوعين" (NOT "سأقدم استقالتي بعد أسبوعين").
-     * "Wasted" (drunk/intoxicated) -> "ثملة جداً / منتشية بشدة" or "ثمل جداً" (NOT "فاقدة للوعي" unless literally unconscious).
-     * "Tease her/him" (playful banter) -> "مازحها / مازحه" (NOT sensual "داعبها").
-     * "Did you have a seizure or something?" -> "هل أصابتك نوبة صرع أو شيء من هذا القبيل؟".
-     * "Hooking up (on and off)" -> When followed by context indicating it is non-emotional/casual, translate accurately as "يدخلان في علاقة عابرة من حين إلى آخر" (NOT formal romantic "يتواعدان").
-3. REPLACE AWKWARD LITERAL ENGLISH CALQUES WITH NATURAL ARABIC:
-   - "I super promise" -> "أعدك حقاً" (NEVER "أعدك بشدة").
-   - "But the butter makes up for that shit" -> "لكن الزبدة تعوّض ذلك" (NEVER "الزبدة تشفع لهذا اللعين").
-   - "What the fuck/hell is going on?" -> "ما الذي يحدث بحق الجحيم؟ / ما هذا الذي يجري؟" (NEVER "ما اللعنة التي تحدث؟").
-   - "Causing/starting drama" -> "إثارة المشاكل / إشعال المشاكل" (NEVER "إثارة الدراما").
-   - "With this energy" (referring to attitude/behavior) -> "بهذا الأسلوب / بهذه الطريقة في التعامل" (NEVER "بهذه الطاقة").
-4. ELIMINATE ALL LEFTOVER ENGLISH / FOREIGN WORDS & FIX SPELLING:
-   - No untranslated English words may remain in "revisedText" (except valid HTML/SRT formatting tags like <i>, </i>, <b>, </b>, <u>, </u>, {\\an8}).
+   - VOCATIVE INVERSION CHECK: When a previous line directly addresses a named character, that named character is the addressee of THAT line—so when they reply in the next turn, fix any false pronoun/verb gender copied onto their listener (e.g., masculine vs feminine "أخبرني / أخبريني", "تريدني / تريدينني").
+   - SCENE CONTINUITY IN RAPID DIALOGUES: In tense confrontations or rapid exchanges where names are omitted across short lines, ensure addressee gender stays consistent with the scene rather than flipping unexpectedly to default masculine.
+2. RECONSTRUCT CROSS-CUE SPLIT SENTENCES & FIX ISOLATED FRAGMENTS:
+   - Whenever an entry begins mid-clause or reads syntactically broken, reconstruct the FULL English sentence across adjacent (-2, -1, +1, +2) cues and ensure each cue carries coherent, natural Arabic phrasing.
+   - Fix orphaned literal fragments (e.g., "Seems impossible to face" continuing a prior clause -> "يبدو من المستحيل مواجهته", NEVER broken "مستحيلاً على المواجهة").
+3. FIX LITERAL IDIOM MISTRANSLATIONS, SONG LYRICS (♪) & SUBTEXT:
+   - Replace word-for-word idiom glosses with natural Arabic equivalents:
+     * "Heaven knows" -> "يعلم الله" (NEVER "السماء تعلم").
+     * "With one accord" -> "بصوت واحد / بقلب واحد" (NEVER "بكلمة واحدة متفقة").
+     * "Break it all down" (when explaining) -> "لأشرح الأمر وأفصّله" (NOT literal "لأهدم كل شيء").
+     * "In the fast lane" -> "في المسار السريع" (NOT invented "طريق النجاح السريع").
+     * "Never ... again" -> "لن ... مجدداً / ثانيةً" (NEVER collapse into plain "لن ... أبداً" when "again" is meant).
+   - Elevate song lyrics ("♪" / "♫") and letter prose from stiff prose to cohesive lyrical Arabic, keeping recurring refrains consistent and restoring authentic sensual, dramatic, or comedic subtext where awkward euphemisms distorted the meaning (subject to profanity/tone preferences).
+   - Verify lexical distinctions: "cringey" (محرج) vs "gross" (مقزز), casual fling vs emotional romance, stale food (بايت) vs old, intoxicated vs unconscious.
+4. REPLACE LITERAL CALQUES, ARCHAIC DICTION & ORTHOGRAPHIC/MORPHOLOGICAL ERRORS:
+   - Remove stiff archaic vocatives like "يا هذا" for casual "man/dude/bro" -> natural "يا رجل / يا صاح" or omit.
+   - Fix literal calques ("I super promise" -> "أعدك حقاً"; "what the hell/fuck" -> "ما الذي يحدث بحق الجحيم؟"; "causing drama" -> "إثارة المشاكل"; "with this energy" -> "بهذا الأسلوب"; "يأخذ مكان" -> "يجري / تدور أحداثه"; "يصنع معنى" -> "هذا منطقي").
+   - Fix defective verb morphology ("تُمحي / يمحي" -> "تمحو / يمحو") and ensure faithful proper-noun transliteration (e.g., "Ole Miss" -> "أول ميس").
+   - Eliminate leftover English/foreign words (except valid HTML/SRT tags like <i>, </i>, <b>, </b>, <u>, </u>, {\\an8}).
    - Fix hamza errors (همزة القطع والوصل), taa marbuta vs haa, alif maqsura vs yaa, dual/plural agreement, and typos ("انشاء الله" -> "إن شاء الله").
 5. PRESERVE FORMATTING TAGS & STRUCTURE 100%:
    - Keep all inline tags (<i>...</i>, <b>...</b>, <u>...</u>, {\\an8}, ♪) intact.

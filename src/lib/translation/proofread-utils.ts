@@ -101,20 +101,41 @@ export function detectEntriesNeedingProofread(
         }
 
         // 3. Check for duplicate consecutive Arabic words (e.g. "في في", "من من", "هذا هذا")
-        if (/\b([\u0600-\u06FF]{2,})\s+\1\b/.test(cleanTrans)) {
+        if (/(?<![\p{L}\p{N}\p{M}_])([\u0600-\u06FF]{2,})\s+\1(?![\p{L}\p{N}\p{M}_])/u.test(cleanTrans)) {
           reasons.push('Duplicate consecutive word detected');
         }
 
-        // 4. Check for common spelling errors or awkward literal machine calques
+        // 4. Check for common spelling, defective-verb, or literal machine calque errors
         if (
-          /(انشاء الله|يأخذ مكان|يصنع معنى|قطعة من الكعكة|هل تقوم بممازحتي|\bلاكن\b|\bهاذ[اه]\b|\bاللذ[ين]\b|\bاللتي\b)/.test(
+          /(?:انشاء\s+الله|يأخذ مكان|يصنع معنى|قطعة من الكعكة|هل تقوم بممازحتي)|(?<![\p{L}\p{N}\p{M}_])(?:لاكن|هاذ[اه]|اللذ[ين]|اللتي|[يتن]محي)(?![\p{L}\p{N}\p{M}_])/u.test(
             cleanTrans
           )
         ) {
           reasons.push('Contains literal machine calque or common Arabic spelling mistake');
         }
 
-        // 5. Check for unbalanced brackets or collapsed multi-speaker dash dialogue turns
+        // 5. Check for archaic vocatives or high-signal literal idiom misses against source
+        if (
+          /\b(?:man|dude|bro|pal|buddy)\b/i.test(cleanOrig) &&
+          /(?<![\p{L}\p{N}\p{M}_])يا\s+هذا(?![\p{L}\p{N}\p{M}_])/u.test(cleanTrans)
+        ) {
+          reasons.push('Stiff archaic vocative ("يا هذا") used for casual dialogue');
+        }
+        if (
+          (/\bheaven\s+knows\b/i.test(cleanOrig) && /السماء\s+تعلم/u.test(cleanTrans)) ||
+          (/\bwith\s+one\s+accord\b/i.test(cleanOrig) && /بكلمة\s+واحدة\s+متفقة/u.test(cleanTrans))
+        ) {
+          reasons.push('Literal idiom or lyric translation detected');
+        }
+        if (
+          /\bnever\b.*\bagain\b/i.test(cleanOrig) &&
+          /(?<![\p{L}\p{N}\p{M}_])أبد(?:\u064bا|ا\u064b?)(?![\p{L}\p{N}\p{M}_])/u.test(cleanTrans) &&
+          !/(?:مجدد(?:\u064bا|ا\u064b?)|ثانية\u064b?|مرة\s+أخرى|من\s+جديد)/u.test(cleanTrans)
+        ) {
+          reasons.push('Missing repetition adverb ("again") in "never ... again" phrasing');
+        }
+
+        // 6. Check for unbalanced brackets or collapsed multi-speaker dash dialogue turns
         if (hasUnbalancedBrackets(cleanTrans)) {
           reasons.push('Unbalanced parentheses or square brackets detected');
         }

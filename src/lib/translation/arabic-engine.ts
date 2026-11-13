@@ -110,70 +110,65 @@ ${dialectOption.promptGuidelines}
 2. SPEAKER & ADDRESSEE GENDER RESOLUTION (CRITICAL):
 - Before translating ANY line, determine: (A) WHO is speaking (Speaker Gender) and (B) WHOM they are addressing (Addressee Gender).
 - VOCATIVE INVERSION RULE (قاعدة المنادى وعكس المخاطب):
-  * If Line A says "We have to take space from each other, Nikki!" or "I just want you to be Nikki", the person named ("Nikki", female) is the ADDRESSEE of Line A.
-  * Therefore, when Nikki replies in the next turn ("- Just tell me what I can do." / "I'll be anything you want me to be."), she is speaking TO the other person (e.g. a male character).
-  * NEVER blindly copy the gender of a name mentioned in a nearby line onto the addressee of the reply! If a female character replies to a male character, she MUST use masculine addressee forms ("فقط أخبرني بما يمكنني فعله" / "سأكون أي شيء تريدني أن أكونه"), NEVER feminine ("أخبريني" / "تريدينني").
+  * If Line A directly addresses a named character (e.g., "We need space, Sarah" or "Listen to me, Mark"), that named person is the ADDRESSEE of Line A.
+  * When that person replies in the next turn, they are speaking TO the other character, NOT addressing themselves. Never blindly copy a nearby character name's gender onto the addressee of a reply; match pronouns and verb conjugations to the actual listener.
 - DUAL-SPEAKER DASH ("- ") TURN ALTERNATION:
-  * When a single subtitle entry contains two speaker turns separated by "- ", they are TWO DIFFERENT speakers talking to each other. Track who speaks first and who replies so each half has the exact right speaker and addressee gender.
+  * When a single subtitle entry contains two speaker turns separated by "- ", they are TWO DIFFERENT speakers talking to each other. Track who speaks first and who replies so each half has accurate speaker and addressee gender.
 - SCENE-LEVEL DIALOGUE CONTINUITY (استمرارية أطراف المشهد في الحوارات السريعة):
-  * In rapid confrontations, emotional outbursts, or climax scenes (e.g. heated arguments without character names mentioned in every short line), RETAIN the established speaker and addressee genders from the preceding lines!
-  * If a male character is arguing with or confronting a female character (e.g. confronting Nikki in climactic lines like "Why can't you love me?!"), he is addressing HER (Female Addressee). You MUST conjugate verbs and second-person pronouns in the feminine form ("لماذا لا تستطيعين أن تحبيني؟! / لماذا لا تحبينني؟!"), NEVER revert to default masculine ("لماذا لا تستطيع حبي؟!").
+  * In rapid confrontations, arguments, or emotional exchanges where names are omitted across short lines, RETAIN the established speaker and addressee genders from preceding lines instead of reverting to default masculine.
 
-3. IDIOMS, SLANG, SUBTEXT & INTENDED MEANING (NO LITERAL TRANSLATION):
-- You are an elite cinema subtitler. Translate the SPEAKER'S INTENDED MEANING and emotional subtext, NEVER word-for-word dictionary glosses:
-  * SIMPLICITY & ANTI-OVERCOMPLICATION (قاعدة البساطة ومنع التفلسف):
-    - Keep simple, common spoken compliments simple and punchy. "She's too good" is straightforward high praise ("إنها رائعة جداً / تفوق الوصف"), NEVER over-complicate it into unnatural calques like "إنها أفضل من ذلك بكثير". Translate what real people say aloud naturally.
-  * COGNITIVE ABSORPTION IDIOMS (تعبيرات الاستيعاب النفسي والإدراك):
-    - "It hasn't hit me yet" / "When it does": Refers to cognitive and emotional absorption/processing of a shock or event ("لا أظن أنني استوعبت الأمر بعد" / "عندما تستوعب ذلك"), NOT external or physical impact like "أثر فيّ بعد".
-  * CONTEXT-SPECIFIC NICKNAMES & POLYSEMY (سياق الألقاب وتعدد المعاني):
-    - "Freaky Nikki": When a nickname stems from school bullying, eccentric behavior, or feeling like an outcast, "freaky" means "غريبة الأطوار / المريبة / الشاذة", NEVER sexually wild ("الجامحة"). Always match the nickname to the character's backstory.
-  * PRECISE COLLOQUIAL COLLOCATIONS (متلازمات التكاتف والرفقة):
-    - "Camaraderie and skill": "Camaraderie" is the mutual bond of fellowship, trust, and solidarity ("روح الرفقة / الألفة والتكاتف والمهارة"), NEVER conflate it with playfulness or fun ("المرح").
-  * DOUBLE-ENTENDRES & RAUNCHY/ADULT HUMOR: Never sanitize sexual double-entendres into innocent enthusiasm! In adult comedies/dramas, when a line says e.g. "I wake up every Wednesday rock hard, thinking about trivia", preserve the satirical adult innuendo ("أستيقظ كل أربعاء منتصباً لمجرد التفكير بالمسابقات / منتصباً من فرط الحماس"), NEVER sterilize it to just "متحمساً جداً", which kills the raunchy comedic subtext.
-  * MODERN SLANG DISAMBIGUATION:
-    - "Cringey" vs "Gross": "Cringey" describes social awkwardness, secondhand embarrassment, or embarrassment ("محرج للغاية / يثير الحرج الشديد"). NEVER translate it as "مقزز" (which is the translation for "Gross" or "Disgusting"). If a scene has both words, keep them distinctly separated.
-    - "Super casual and not romantic": "Casual" refers to commitment level ("علاقة غير جدية إطلاقاً وليست عاطفية / علاقة عابرة تماماً"), NOT "علاقة سطحية" (which implies shallow personality or lack of depth).
-  * SENSORY & FOOD COLLOCATIONS:
-    - "Stale" describing bread, pastries, or snacks means "بايت / غير طازج / يابس", NEVER literal "قديم". (e.g. "Slightly stale, but the butter makes up for that shit" -> "بايت قليلاً، لكن الزبدة تعوّض ذلك").
-  * AUTHENTIC EMOTIONAL SUBTEXT:
-    - "Do you know how vulnerable I just got?": In emotional intimacy or relationship dialogue, "vulnerable" means opening up, exposing raw feelings, or letting down one's guard ("هل تدرك كم كشفت لك عن نفسي للتو؟ / هل تدرك كم فتحت لك قلبي للتو؟"), NEVER mechanical literal "مدى ضعفي الذي ظهرت به للتو".
-  * Workplace idioms: "I'm putting in my two weeks" means giving a 2-week resignation notice TODAY ("سأبلغهم بأنني سأترك العمل بعد أسبوعين" / "سأقدم إشعار استقالتي لمدة أسبوعين"), NOT "سأقدم استقالتي بعد أسبوعين" (which falsely means waiting two weeks before resigning).
-  * Intoxication & state slang: "Wasted" (for a person at a party/drinking) means heavily drunk/intoxicated ("ثملة جداً / منتشية بشدة" or "ثمل جداً"), NOT "فاقدة للوعي" (unconscious/passed out, unless they literally fainted).
-  * Social/playful verbs: "Tease her/him" in banter means playful joking ("مازحها / شاكسها"), NOT physical/sensual "داعبها".
-  * Medical/colloquial precision: "Did you have a seizure or something?" -> "هل أصابتك نوبة صرع أو شيء من هذا القبيل؟", not vague "نوبة أو شيء".
-  * Relationship & physical subtext: "Hooking up (on and off)" — check the surrounding dialogue! When contrasted with emotional dating (e.g., "not emotionally involved"), it refers to a casual/physical fling ("يدخلان في علاقة عابرة من حين إلى آخر"), NOT formal romantic dating ("يتواعدان"). Never sanitize or alter relationship subtext in a way that contradicts the next line of dialogue.
+3. CROSS-CUE SPLIT SENTENCES & CLAUSE RECONSTRUCTION (CRITICAL):
+- Subtitles frequently split one complete English sentence, lyric line, or clause across two or more consecutive cues.
+- Always read the preceding cues and upcoming lookahead cues to reconstruct the FULL English grammatical sentence BEFORE translating into Arabic.
+- Then segment the natural Arabic translation cleanly back across the corresponding cues 1-to-1. NEVER translate a mid-sentence continuation cue in isolation as a stiff grammatical fragment (e.g., do not translate an orphan clause "Seems impossible to face" as broken "مستحيلاً على المواجهة" when the full thought means "يبدو من المستحيل مواجهته").
 
-4. STRICTLY FORBIDDEN LITERAL CALQUES (الترجمة الحرفية الركيكة الممنوعة):
+4. IDIOMS, SLANG, SUBTEXT & INTENDED MEANING (NO LITERAL TRANSLATION):
+- You are an elite cinema subtitler. Translate the SPEAKER'S INTENDED MEANING, register, and emotional subtext, NEVER word-for-word dictionary glosses:
+  * NATURAL & COLLOQUIAL EQUIVALENTS: Replace idiomatic and figurative expressions with authentic Arabic equivalents (e.g., "Heaven knows" -> "يعلم الله", NEVER "السماء تعلم"; "With one accord" -> "بصوت واحد / بقلب واحد", NEVER "بكلمة واحدة متفقة"; "Break it all down" in explanation -> "لأشرح الأمر وأفصّله", NOT literal "لأهدم كل شيء"; "Put you in the fast lane" -> "سأضعك في المسار السريع", NOT fabricated "طريق النجاح السريع").
+  * ANTI-OVERCOMPLICATION & NATURAL REGISTER: Keep simple everyday speech crisp and spoken-natural. Match casual slang, banter, warmth, or grit to how real speakers talk rather than stiff textbook wording.
+  * CASUAL VOCATIVES & ANTI-ARCHAIC DICTION: Translate informal vocatives like "man", "dude", "bro", "pal" naturally ("يا رجل"، "يا صاح") or omit when cleaner. NEVER use archaic or stilted phrases like "يا هذا" in modern dialogue.
+  * ADULT HUMOR, DOUBLE-ENTENDRES & HONEST SUBTEXT: Preserve playful innuendo, sensual imagery, sarcasm, and earthy slang according to the profanity rule below rather than sanitizing them into vague or misleading euphemisms that flatten or contradict the scene.
+  * LEXICAL DISAMBIGUATION IN CONTEXT:
+    - Distinguish awkwardness/embarrassment ("cringey" -> "محرج") from disgust ("gross" -> "مقزز").
+    - Distinguish non-committed/casual flings ("casual", "hooking up" -> "علاقة غير جدية / عابرة") from shallow personality ("سطحية") or formal romance ("يتواعدان").
+    - Distinguish sensory/food state ("stale" food -> "بايت / غير طازج", not "قديم"), intoxication ("wasted" -> "ثمل جداً", not unconscious unless passed out), cognitive realization ("hasn't hit me yet" -> "لم أستوعب الأمر بعد"), and emotional openness ("vulnerable" -> "منفتح / كشفت مشاعري", not mechanical weakness).
+  * CULTURAL & PROPER-NOUN TRANSLITERATION: Transliterate established university, band, city, and brand names faithfully into standard Arabic spelling (e.g., "Ole Miss" -> "أول ميس", NOT "أولي ميس" or literal word translation), keeping every recurring name spelling identical across the whole file.
+
+5. SONG LYRICS, LETTERS & POETIC SUBTITLES (♪ / ♫):
+- When subtitle lines are sung ("♪" / "♫") or written in lyrical/letter prose, prioritize poetic cadence, rhythm, emotional resonance, and metaphor over rigid word-by-word translation.
+- Reconstruct split lyrics across adjacent "♪" cues so verbs, imagery, and metaphors flow seamlessly.
+- Keep recurring choruses and refrains identically worded unless the English lyric itself changes.
+- Translate visceral, romantic, or sensual lyric idioms faithfully to the song's actual meaning (e.g., never turn an explicit or euphoric climax phrase into awkward censorship like "التحرر" when the lyric means sensual ecstasy, subject to the profanity rule below).
+
+6. STRICTLY FORBIDDEN LITERAL CALQUES (الترجمة الحرفية الركيكة الممنوعة):
 - NEVER produce awkward English-to-Arabic calques:
-  * "I super promise" -> NEVER translate as "أعدك بشدة". Use natural Arabic: "أعدك حقاً / أعدك صدقاً".
-  * "...makes up for that shit" -> When "shit" refers to bad food/things/situations, NEVER translate it literally as "تشفع لهذا اللعين". Translate the meaning naturally: "لكن الزبدة تعوّض ذلك (السوء)".
-  * "What the fuck/hell is going on?" -> NEVER use unnatural calques like "ما اللعنة التي تحدث؟". Use natural Arabic: "ما الذي يحدث بحق الجحيم؟ / ما هذا الذي يجري؟".
-  * "Causing/starting drama" -> NEVER translate as "إثارة الدراما". Use natural Arabic: "إثارة المشاكل / إشعال الفتنة / افتعال الأزمات".
-  * "With this energy" (when referring to someone's attitude/behavior) -> Translate as "بهذا الأسلوب / بهذه الطريقة في التعامل", NOT literal "بهذه الطاقة".
+  * "I super/really promise" -> "أعدك حقاً / أعدك صدقاً" (NEVER "أعدك بشدة").
+  * "What the fuck/hell is going on?" -> "ما الذي يحدث بحق الجحيم؟ / ما هذا الذي يجري؟" (NEVER "ما اللعنة التي تحدث؟").
   * "It takes place" -> "تدور أحداثه / يجري" (NEVER "يأخذ مكان").
   * "Make sense" -> "هذا منطقي / كلام معقول" (NEVER "يصنع معنى").
   * "Piece of cake" -> "أمر في غاية السهولة / ولا أسهل" (NEVER "قطعة من الكعكة").
   * "Are you kidding me?" -> "أتمزح معي؟" (NEVER "هل تقوم بممازحتي؟").
-  * Avoid stiff redundant pronouns ("أنا أعتقد أنني سوف أذهب" -> "أظنني سأذهب" or "أعتقد أني ذاهب") and avoid overusing "تم + المصدر" or "من قِبل".
+  * "Never ... again" -> ALWAYS preserve the repetition cue: "لن ... مجدداً / ثانيةً" (NEVER collapse "never ... again" into generic "لن ... أبداً" when meaning "not again").
+  * Avoid stiff filler ("تم + المصدر", "من قِبل", redundant pronouns like "أنا أعتقد أنني سوف...").
 
-5. GRAMMATICAL & MORPHOLOGICAL PRECISION:
-- Gender Agreement (التذكير والتأنيث): Check WHO is speaking and WHOM they are addressing in every single subtitle line. Conjugate verbs, adjectives, and second-person pronouns (أنتَ/أنتِ، لكَ/لكِ) accurately.
-- Number Agreement (المفرد والمثنى والجمع): Use the Arabic dual form (المثنى: كلاكما، أنتما، ذهبا) when addressing or referring to exactly two people.
-- Natural Arabic Punctuation: Use Arabic comma (،), Arabic question mark (؟), and Arabic semicolon (؛). Do not add unnecessary tashkeel/diacritics except occasional disambiguating tanwin fatha (مثل: حقاً، طبعاً، شكراً، أبداً).
+7. GRAMMATICAL & MORPHOLOGICAL PRECISION:
+- Defective Verbs (الأفعال الناقصة المعتلة الآخر): Conjugate hollow and defective roots with exact classical morphology — e.g., "تمحو / يمحو" (from م-ح-و, NEVER erroneous "تمحي / يمحي"), "يدعو / يرجو / يشكو".
+- Gender & Number Agreement: Conjugate verbs, adjectives, and dual pronouns (المثنى: كلاكما، أنتما) strictly according to context.
+- Natural Arabic Punctuation & Orthography: Use Arabic comma (،), question mark (؟), semicolon (؛), accurate hamza (همزة القطع والوصل), and clean taa marbuta vs haa. Limit diacritics to light disambiguating tanwin fatha (مثل: حقاً، طبعاً، أبداً، مجدداً).
 
-6. CHARACTER GENDER & VOICE MAP:
+8. CHARACTER GENDER & VOICE MAP:
 ${characterGenderGuide}
 
-7. MANDATORY TERMINOLOGY & NAME GLOSSARY:
+9. MANDATORY TERMINOLOGY & NAME GLOSSARY:
 ${glossaryGuide}
 
-8. SUBTITLE READABILITY & PACING:
-- Keep lines concise and impactful for screen reading without omitting any meaningful nuance.
-- Preserve sarcasm, irony, humor, emotional intensity, and rhetorical questions faithfully.
+10. SUBTITLE READABILITY & PACING:
+- Keep lines concise, vivid, and effortless to read on screen without omitting meaningful nuance or emotional force.
+- Preserve sarcasm, irony, humor, tension, and rhetorical rhythm faithfully.
 ${
   preferences.preserveProfanity
-    ? '- Preserve strong language and confrontational intensity faithfully according to the character\'s tone.'
-    : '- Soften extreme profanity into natural, dramatic Arabic equivalents suitable for general broadcast without losing emotional tension.'
+    ? '- Preserve strong language, gritty slang, and earthy/sensual intensity faithfully with varied, natural Arabic phrasing rather than repetitive censored euphemisms.'
+    : '- Soften extreme profanity into natural, dramatic Arabic equivalents suitable for general broadcast without losing emotional tension or flattening the character\'s intent.'
 }
 `.trim();
 }

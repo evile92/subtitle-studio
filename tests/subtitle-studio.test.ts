@@ -15,9 +15,15 @@ import {
 } from '@/lib/languages';
 import {
   applyArabicRtlBidiFix,
+  buildArabicLinguisticInstructions,
   normalizeArabicSubtitleText,
   stripBidiControlChars,
 } from '@/lib/translation/arabic-engine';
+import { buildAnalysisSystemPrompt } from '@/lib/translation/context-analyzer';
+import {
+  buildBatchTranslationPrompts,
+  buildSingleEntryRegeneratePrompts,
+} from '@/lib/translation/prompts';
 import { createContextualBatches } from '@/lib/translation/chunker';
 import { validateAndRepairTranslations } from '@/lib/translation/validator';
 import {
@@ -25,6 +31,7 @@ import {
   regenerateSingleSubtitleEntry,
 } from '@/lib/translation/pipeline';
 import {
+  buildProofreadBatchPrompts,
   detectEntriesNeedingProofread,
   proofreadSubtitleJob,
 } from '@/lib/translation/proofreader';
@@ -1244,5 +1251,113 @@ Wait for me at the gate.
         (globalThis as { indexedDB?: unknown }).indexedDB = prevIdb;
       }
     }
+  });
+
+  it('Test 15: Prompts stay film-agnostic while enforcing cross-cue, lyric, and Unicode Arabic QA rules', () => {
+    const sampleEntries = parseSrtContent(`1
+00:00:01,000 --> 00:00:03,000
+♪ Heaven knows what you mean
+
+2
+00:00:03,200 --> 00:00:05,000
+Seems impossible to face ♪
+`).entries;
+    sampleEntries[0].translatedText = '♪ يعلم الله ما تعنيه';
+    sampleEntries[1].translatedText = 'يبدو من المستحيل مواجهته ♪';
+
+    const arabicPrompt = buildArabicLinguisticInstructions('msa', DEFAULT_PREFS);
+    const analysisPrompt = buildAnalysisSystemPrompt({
+      sourceLanguage: 'en',
+      targetLanguage: 'ar',
+      arabicDialect: 'msa',
+      preferences: DEFAULT_PREFS,
+    }).systemPrompt;
+    const batchPrompt = buildBatchTranslationPrompts({
+      batchEntries: [sampleEntries[0]],
+      precedingEntries: [],
+      followingEntries: [sampleEntries[1]],
+      sourceLanguage: 'en',
+      targetLanguage: 'ar',
+      arabicDialect: 'msa',
+      preferences: DEFAULT_PREFS,
+      glossary: [],
+    }).systemPrompt;
+    const regenPrompt = buildSingleEntryRegeneratePrompts({
+      targetEntry: sampleEntries[0],
+      surroundingBefore: [],
+      surroundingAfter: [sampleEntries[1]],
+      sourceLanguage: 'en',
+      targetLanguage: 'ar',
+      arabicDialect: 'msa',
+      preferences: DEFAULT_PREFS,
+      glossary: [],
+    }).systemPrompt;
+    const proofreadPrompt = buildProofreadBatchPrompts({
+      targetEntries: [sampleEntries[0]],
+      allEntriesMap: new Map(sampleEntries.map((entry) => [entry.sequence, entry])),
+      reasonsBySequence: {},
+      sourceLanguage: 'en',
+      targetLanguage: 'ar',
+      arabicDialect: 'msa',
+      preferences: DEFAULT_PREFS,
+      glossary: [],
+    }).systemPrompt;
+
+    for (const promptText of [arabicPrompt, analysisPrompt, batchPrompt, regenPrompt, proofreadPrompt]) {
+      assert.equal(/Nikki|Freaky|trivia|butter makes up/i.test(promptText), false);
+    }
+
+    assert.ok(arabicPrompt.includes('CROSS-CUE SPLIT SENTENCES'));
+    assert.ok(arabicPrompt.includes('SONG LYRICS'));
+    assert.ok(arabicPrompt.includes('يا هذا'));
+    assert.ok(arabicPrompt.includes('تمحو / يمحو'));
+    assert.ok(batchPrompt.includes('CROSS-CUE SENTENCE CONTINUATION'));
+    assert.ok(batchPrompt.includes('SONG LYRICS & REFRAINS'));
+    assert.ok(regenPrompt.includes('Cross-Cue Continuity & Lyrics'));
+    assert.ok(analysisPrompt.includes('SONG LYRICS, REFRAINS & CROSS-CUE CLAUSES'));
+    assert.ok(proofreadPrompt.includes('RECONSTRUCT CROSS-CUE SPLIT SENTENCES'));
+    assert.ok(proofreadPrompt.includes('تمحو / يمحو'));
+
+    const auditEntries = parseSrtContent(`1
+00:00:01,000 --> 00:00:02,000
+Listen man, stop.
+
+2
+00:00:02,500 --> 00:00:04,000
+Watch it fade the moon away
+
+3
+00:00:04,500 --> 00:00:06,000
+Heaven knows I tried
+
+4
+00:00:06,500 --> 00:00:08,000
+You will never love me again
+
+5
+00:00:08,500 --> 00:00:10,000
+We stood here
+
+6
+00:00:10,500 --> 00:00:12,000
+♪ Heaven knows I tried ♪
+
+7
+00:00:12,500 --> 00:00:14,000
+Watch it fade the moon away
+`).entries;
+
+    auditEntries[0].translatedText = 'توقف يا هذا.';
+    auditEntries[1].translatedText = 'ونراها تمحي ضوء القمر بعيداً';
+    auditEntries[2].translatedText = 'السماء تعلم أنني حاولت';
+    auditEntries[3].translatedText = 'فلن تحبني أبداً';
+    auditEntries[4].translatedText = 'وقفنا في في هذا المكان';
+    auditEntries[5].translatedText = '♪ يعلم الله أنني حاولت، لن أعود مجدداً يا رجل ♪';
+    auditEntries[6].translatedText = 'ونشاهدها تمحو ضوء القمر بعيداً';
+
+    const detected = detectEntriesNeedingProofread(auditEntries, 'ar');
+    assert.deepEqual(detected.sequences, [1, 2, 3, 4, 5]);
+    assert.equal(detected.reasonsBySequence[6], undefined);
+    assert.equal(detected.reasonsBySequence[7], undefined);
   });
 });

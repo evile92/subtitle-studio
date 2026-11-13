@@ -246,7 +246,7 @@ function formatTranscriptSegment(entries: SubtitleEntry[]): string {
     .join('\n');
 }
 
-function buildAnalysisSystemPrompt(params: {
+export function buildAnalysisSystemPrompt(params: {
   sourceLanguage: string;
   targetLanguage: string;
   arabicDialect?: ArabicDialect;
@@ -267,16 +267,10 @@ Source Language: ${sourceLangName}
 Requested Style: ${preferences.style}
 
 CRITICAL EXTRACTION PRIORITIES:
-1. CHARACTER GENDERS & RELATIONSHIPS: Identify EVERY named or recurring character's exact gender ("male" or "female") and how they relate to others (romantic partners, casual/physical fling vs emotional dating, coworkers, family, rivals). This is vital for Arabic masculine/feminine verb and pronoun conjugation (التذكير والتأنيث).
-2. COLLOQUIAL IDIOMS, SLANG, DOUBLE-ENTENDRES & SUBTEXT: Identify:
-   - Workplace idioms (e.g. "putting in my two weeks").
-   - Intoxication/party slang ("wasted").
-   - Relationship nature & physical subtext ("hooking up on and off", "super casual and not romantic").
-   - Adult double-entendres & raunchy humor (e.g. "rock hard, thinking about trivia" — identify the comedic innuendo so it is NOT sanitized into innocent enthusiasm).
-   - Modern slang with subtle distinctions ("cringey" = embarrassing/socially awkward, distinct from "gross" = disgusting).
-   - Food/sensory collocations ("stale" = بايت / غير طازج, not generic old).
-   - Emotional vulnerability ("vulnerable" = opening up / exposing feelings, not literal weakness).
-   Record each in "idiomsAndNuances" with its exact "sequenceNumbers" and recommended natural localization strategy (never literal word-for-word calques).
+1. CHARACTER GENDERS, VOCATIVES & RELATIONSHIPS: Identify EVERY named or recurring character's exact gender ("male" or "female"), conversational register, and relationships (romantic partners, casual flings vs serious commitment, coworkers, rivals, family). This is vital for Arabic masculine/feminine verb and pronoun conjugation (التذكير والتأنيث).
+2. IDIOMS, SLANG, DOUBLE-ENTENDRES & SUBTEXT: Flag figurative idioms, street/era slang, workplace jargon, double-entendres, sensual or profanity nuances (so translators never sterilize jokes/lyrics or miss subtle distinctions), and non-literal phrases. Record each in "idiomsAndNuances" with exact "sequenceNumbers" and a concise natural localization strategy.
+3. SONG LYRICS, REFRAINS & CROSS-CUE CLAUSES (♪): Identify recurring musical lyrics, refrains, poetic letters, or split-clause idioms so choruses stay uniform and verses retain lyrical subtext.
+4. CULTURAL REFERENCES & PROPER NOUNS: Capture cities, universities, brands, nicknames, and titles requiring consistent, accurate transliteration rather than literal translation.
 
 Respond ONLY with a valid JSON object matching this EXACT structure and key names:
 {
