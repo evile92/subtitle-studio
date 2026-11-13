@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  createAdapterFromUserConfig,
-  getAIProviderAdapter,
-} from '@/lib/ai/providers';
+import { resolveRequestAIAdapter } from '@/lib/ai/providers';
 import {
   analyzeFullSubtitleContext,
   analyzeSubtitleSegmentStateless,
@@ -59,9 +56,7 @@ export async function POST(req: NextRequest) {
       userAIConfig?: UserClientAIConfig;
     };
 
-    const aiAdapter = userAIConfig?.apiKey
-      ? createAdapterFromUserConfig(userAIConfig)
-      : getAIProviderAdapter();
+    const aiAdapter = resolveRequestAIAdapter(userAIConfig);
 
     if (!aiAdapter.isConfigured()) {
       return NextResponse.json(

@@ -22,6 +22,7 @@ import {
 
 interface RecentHistoryProps {
   jobs: JobSummary[];
+  isProcessing?: boolean;
   onOpenJob: (jobId: string) => void;
   onResumeJob: (jobId: string) => void;
   onDeleteJob: (jobId: string) => void;
@@ -29,6 +30,7 @@ interface RecentHistoryProps {
 
 export function RecentHistory({
   jobs,
+  isProcessing = false,
   onOpenJob,
   onResumeJob,
   onDeleteJob,
@@ -124,8 +126,9 @@ export function RecentHistory({
                   {!isCompleted && (
                     <button
                       type="button"
+                      disabled={isProcessing}
                       onClick={() => onResumeJob(job.id)}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5"
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:pointer-events-none text-white flex items-center gap-1.5"
                     >
                       <Play className="w-3.5 h-3.5" />
                       <span>{t.history.resumeButton}</span>

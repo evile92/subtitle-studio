@@ -17,6 +17,66 @@ const MAX_STORED_CLIENT_JOBS = 10;
 // In-memory client cache for instant state reads and large script resilience
 const clientMemoryJobs = new Map<string, TranslationJob>();
 
+const EMPTY_SUMMARIES: JobSummary[] = [];
+const clientJobListeners = new Set<() => void>();
+let clientStoreVersion = 0;
+let cachedSummariesVersion = -1;
+let cachedSummariesValue: JobSummary[] = EMPTY_SUMMARIES;
+let cachedActiveJobVersion = -1;
+let cachedActiveJobValue: TranslationJob | null = null;
+
+function notifyClientJobStoreChange(): void {
+  clientStoreVersion += 1;
+  for (const listener of clientJobListeners) {
+    listener();
+  }
+}
+
+export function subscribeClientJobs(listener: () => void): () => void {
+  clientJobListeners.add(listener);
+  if (typeof window !== 'undefined') {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === CLIENT_JOBS_STORAGE_KEY || e.key === ACTIVE_JOB_ID_KEY) {
+        notifyClientJobStoreChange();
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => {
+      clientJobListeners.delete(listener);
+      window.removeEventListener('storage', onStorage);
+    };
+  }
+  return () => {
+    clientJobListeners.delete(listener);
+  };
+}
+
+export function getClientJobSummariesSnapshot(): JobSummary[] {
+  if (typeof window === 'undefined') return EMPTY_SUMMARIES;
+  if (cachedSummariesVersion !== clientStoreVersion) {
+    cachedSummariesValue = listClientJobSummaries();
+    cachedSummariesVersion = clientStoreVersion;
+  }
+  return cachedSummariesValue;
+}
+
+export function getServerJobSummariesSnapshot(): JobSummary[] {
+  return EMPTY_SUMMARIES;
+}
+
+export function getLastActiveClientJobSnapshot(): TranslationJob | null {
+  if (typeof window === 'undefined') return null;
+  if (cachedActiveJobVersion !== clientStoreVersion) {
+    cachedActiveJobValue = getLastActiveClientJob();
+    cachedActiveJobVersion = clientStoreVersion;
+  }
+  return cachedActiveJobValue;
+}
+
+export function getServerActiveJobSnapshot(): TranslationJob | null {
+  return null;
+}
+
 function loadAllStoredJobsMap(): Record<string, TranslationJob> {
   if (typeof window === 'undefined') return {};
   try {
@@ -79,6 +139,7 @@ export function saveClientJob(job: TranslationJob): TranslationJob {
     }
   }
 
+  notifyClientJobStoreChange();
   return job;
 }
 
@@ -121,6 +182,8 @@ export function deleteClientJob(jobId: string): void {
       // Ignore
     }
   }
+
+  notifyClientJobStoreChange();
 }
 
 export function listClientJobSummaries(): JobSummary[] {

@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  createAdapterFromUserConfig,
-  getAIProviderAdapter,
-} from '@/lib/ai/providers';
+import { resolveRequestAIAdapter } from '@/lib/ai/providers';
 import { proofreadSingleBatchStateless } from '@/lib/translation/proofreader';
 import { checkRateLimit } from '@/lib/security/rate-limiter';
 import type {
@@ -56,9 +53,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const aiAdapter = userAIConfig?.apiKey
-      ? createAdapterFromUserConfig(userAIConfig)
-      : getAIProviderAdapter();
+    const aiAdapter = resolveRequestAIAdapter(userAIConfig);
 
     if (!aiAdapter.isConfigured()) {
       return NextResponse.json(

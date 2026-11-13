@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   Search,
   Download,
@@ -16,6 +16,8 @@ import {
   ShieldCheck,
   Loader2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Wand2,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
@@ -54,6 +56,8 @@ interface SubtitleWorkspaceProps {
 type WorkspaceTab = 'editor' | 'preview' | 'context' | 'validation';
 type FilterMode = 'all' | 'warnings' | 'edited' | 'untranslated';
 
+const PAGE_SIZE = 50;
+
 export function SubtitleWorkspace({
   job,
   onJobUpdated,
@@ -63,9 +67,11 @@ export function SubtitleWorkspace({
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('editor');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [selectedSequence, setSelectedSequence] = useState<number>(
     job.entries[0]?.sequence || 1
   );
+  const editorListTopRef = useRef<HTMLDivElement | null>(null);
 
   // Local draft edits map: sequence -> edited text
   const [draftEdits, setDraftEdits] = useState<Record<number, string>>({});
@@ -157,6 +163,51 @@ export function SubtitleWorkspace({
     });
   }, [job.entries, draftEdits, filterMode, searchQuery]);
 
+  const totalPages = Math.max(1, Math.ceil(filteredEntries.length / PAGE_SIZE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pageStartIndex = (safeCurrentPage - 1) * PAGE_SIZE;
+
+  const paginatedEntries = useMemo(
+    () => filteredEntries.slice(pageStartIndex, pageStartIndex + PAGE_SIZE),
+    [filteredEntries, pageStartIndex]
+  );
+
+  const visiblePageNumbers = useMemo(() => {
+    const pages: Array<number | 'ellipsis'> = [];
+    if (totalPages <= 7) {
+      for (let p = 1; p <= totalPages; p++) pages.push(p);
+      return pages;
+    }
+
+    pages.push(1);
+    const start = Math.max(2, safeCurrentPage - 1);
+    const end = Math.min(totalPages - 1, safeCurrentPage + 1);
+    if (start > 2) pages.push('ellipsis');
+    for (let p = start; p <= end; p++) pages.push(p);
+    if (end < totalPages - 1) pages.push('ellipsis');
+    pages.push(totalPages);
+    return pages;
+  }, [safeCurrentPage, totalPages]);
+
+  const handleFilterChange = (nextFilter: FilterMode) => {
+    setFilterMode(nextFilter);
+    setCurrentPage(1);
+  };
+
+  const handleSearchChange = (nextQuery: string) => {
+    setSearchQuery(nextQuery);
+    setCurrentPage(1);
+  };
+
+  const handlePageChange = (nextPage: number) => {
+    const clamped = Math.max(1, Math.min(totalPages, nextPage));
+    setCurrentPage(clamped);
+    editorListTopRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+  };
+
   const handleTextChange = (sequence: number, newValue: string) => {
     setDraftEdits((prev) => ({
       ...prev,
@@ -210,7 +261,7 @@ export function SubtitleWorkspace({
           : job.sourceLanguage;
 
       const qaResult = validateAndRepairTranslations({
-        originalEntries: updatedEntries,
+        originalEntries: job.entries,
         translatedEntries: updatedEntries,
         glossary: job.glossary,
         sourceLanguage: effectiveSource,
@@ -350,7 +401,7 @@ export function SubtitleWorkspace({
             : job.sourceLanguage;
 
         const qaResult = validateAndRepairTranslations({
-          originalEntries: updatedEntries,
+          originalEntries: job.entries,
           translatedEntries: updatedEntries,
           glossary: job.glossary,
           sourceLanguage: effectiveSource,
@@ -365,6 +416,13 @@ export function SubtitleWorkspace({
         };
         saveClientJob(updatedJob);
         onJobUpdated(updatedJob);
+
+        setDraftEdits((prev) => {
+          if (prev[sequence] === undefined) return prev;
+          const next = { ...prev };
+          delete next[sequence];
+          return next;
+        });
       }
 
       if (Array.isArray(data.alternatives) && data.alternatives.length > 0) {
@@ -426,7 +484,20 @@ export function SubtitleWorkspace({
           : job.sourceLanguage;
       const isArabic = job.targetLanguage.toLowerCase() === 'ar';
 
-      const workingEntries = job.entries.map((e) => ({ ...e }));
+      const draftSnapshot = { ...draftEdits };
+      const pendingDraftSeqs = Object.keys(draftSnapshot).map(Number);
+
+      const workingEntries = job.entries.map((e) => {
+        const draft = draftSnapshot[e.sequence];
+        if (draft !== undefined) {
+          return {
+            ...e,
+            translatedText: draft,
+            isEditedByUser: true,
+          };
+        }
+        return { ...e };
+      });
       const entriesBySeq = new Map<number, SubtitleEntry>();
       for (const e of workingEntries) {
         entriesBySeq.set(e.sequence, e);
@@ -560,7 +631,7 @@ export function SubtitleWorkspace({
         }
 
         const qaResult = validateAndRepairTranslations({
-          originalEntries: workingEntries,
+          originalEntries: job.entries,
           translatedEntries: workingEntries,
           glossary: job.glossary,
           sourceLanguage: effectiveSource,
@@ -576,6 +647,20 @@ export function SubtitleWorkspace({
 
         saveClientJob(updatedJob);
         onJobUpdated(updatedJob);
+
+        if (pendingDraftSeqs.length > 0) {
+          setDraftEdits((prev) => {
+            const next = { ...prev };
+            let changed = false;
+            for (const seq of pendingDraftSeqs) {
+              if (next[seq] !== undefined && next[seq] === draftSnapshot[seq]) {
+                delete next[seq];
+                changed = true;
+              }
+            }
+            return changed ? next : prev;
+          });
+        }
       }
 
       const remainingEnglishCount = isArabic
@@ -618,6 +703,10 @@ export function SubtitleWorkspace({
     setFilterMode('all');
     setSearchQuery('');
     setSelectedSequence(seq);
+
+    const targetIndex = job.entries.findIndex((e) => e.sequence === seq);
+    setCurrentPage(targetIndex !== -1 ? Math.floor(targetIndex / PAGE_SIZE) + 1 : 1);
+
     setTimeout(() => {
       const el = document.getElementById(`subtitle-row-${seq}`);
       el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1062,7 +1151,7 @@ export function SubtitleWorkspace({
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 placeholder={t.workspace.searchPlaceholder}
                 className="w-full ps-10 pe-4 py-2 rounded-xl text-xs sm:text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
               />
@@ -1071,7 +1160,7 @@ export function SubtitleWorkspace({
             <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => setFilterMode('all')}
+                onClick={() => handleFilterChange('all')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                   filterMode === 'all'
                     ? 'bg-indigo-600 text-white'
@@ -1083,7 +1172,7 @@ export function SubtitleWorkspace({
 
               <button
                 type="button"
-                onClick={() => setFilterMode('warnings')}
+                onClick={() => handleFilterChange('warnings')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                   filterMode === 'warnings'
                     ? 'bg-amber-600 text-white'
@@ -1095,7 +1184,7 @@ export function SubtitleWorkspace({
 
               <button
                 type="button"
-                onClick={() => setFilterMode('edited')}
+                onClick={() => handleFilterChange('edited')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                   filterMode === 'edited'
                     ? 'bg-emerald-600 text-white'
@@ -1107,7 +1196,7 @@ export function SubtitleWorkspace({
 
               <button
                 type="button"
-                onClick={() => setFilterMode('untranslated')}
+                onClick={() => handleFilterChange('untranslated')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                   filterMode === 'untranslated'
                     ? 'bg-rose-600 text-white'
@@ -1118,6 +1207,8 @@ export function SubtitleWorkspace({
               </button>
             </div>
           </div>
+
+          <div ref={editorListTopRef} className="scroll-mt-4" />
 
           {/* Two-Panel Column Headers (Desktop: Left = Original English, Right = Translated Arabic) */}
           <div
@@ -1132,7 +1223,28 @@ export function SubtitleWorkspace({
 
           {/* Synchronized Side-by-Side Subtitle Rows */}
           <div className="space-y-3">
-            {filteredEntries.map((entry) => {
+            {filteredEntries.length === 0 ? (
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-8 text-center space-y-3">
+                <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                  {uiLang === 'ar'
+                    ? 'لا توجد أسطر مطابقة للبحث أو الفلتر الحالي.'
+                    : 'No subtitle lines match your current search or filter.'}
+                </p>
+                {(filterMode !== 'all' || searchQuery.trim() !== '') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleFilterChange('all');
+                      handleSearchChange('');
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+                  >
+                    {uiLang === 'ar' ? 'إعادة ضبط الفلاتر' : 'Reset filters'}
+                  </button>
+                )}
+              </div>
+            ) : (
+              paginatedEntries.map((entry) => {
               const currentText =
                 draftEdits[entry.sequence] ?? entry.translatedText ?? '';
               const isSelected = selectedSequence === entry.sequence;
@@ -1364,8 +1476,75 @@ export function SubtitleWorkspace({
                   </div>
                 </div>
               );
-            })}
+            })
+            )}
           </div>
+
+          {/* Pagination Controls */}
+          {filteredEntries.length > 0 && (
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 px-4 py-3 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                {uiLang === 'ar'
+                  ? `عرض ${pageStartIndex + 1}–${Math.min(
+                      pageStartIndex + PAGE_SIZE,
+                      filteredEntries.length
+                    )} من أصل ${filteredEntries.length} سطر (صفحة ${safeCurrentPage} من ${totalPages})`
+                  : `Showing ${pageStartIndex + 1}–${Math.min(
+                      pageStartIndex + PAGE_SIZE,
+                      filteredEntries.length
+                    )} of ${filteredEntries.length} lines (Page ${safeCurrentPage} of ${totalPages})`}
+              </div>
+
+              {totalPages > 1 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={safeCurrentPage <= 1}
+                    onClick={() => handlePageChange(safeCurrentPage - 1)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5 rtl:rotate-180" />
+                    <span>{uiLang === 'ar' ? 'السابق' : 'Prev'}</span>
+                  </button>
+
+                  {visiblePageNumbers.map((pageItem, idx) =>
+                    pageItem === 'ellipsis' ? (
+                      <span
+                        key={`ellipsis-${idx}`}
+                        className="px-2 text-xs text-slate-400 select-none"
+                      >
+                        ...
+                      </span>
+                    ) : (
+                      <button
+                        key={pageItem}
+                        type="button"
+                        onClick={() => handlePageChange(pageItem)}
+                        aria-current={pageItem === safeCurrentPage ? 'page' : undefined}
+                        className={`min-w-8 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                          pageItem === safeCurrentPage
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        {pageItem}
+                      </button>
+                    )
+                  )}
+
+                  <button
+                    type="button"
+                    disabled={safeCurrentPage >= totalPages}
+                    onClick={() => handlePageChange(safeCurrentPage + 1)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <span>{uiLang === 'ar' ? 'التالي' : 'Next'}</span>
+                    <ChevronRight className="w-3.5 h-3.5 rtl:rotate-180" />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

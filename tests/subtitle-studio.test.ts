@@ -1,5 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
 
 import { parseSrtContent, validateRawSrtInput } from '@/lib/srt/parser';
@@ -13,9 +15,7 @@ import {
 } from '@/lib/languages';
 import {
   applyArabicRtlBidiFix,
-  buildArabicLinguisticInstructions,
   normalizeArabicSubtitleText,
-  preserveOuterFormattingTags,
   stripBidiControlChars,
 } from '@/lib/translation/arabic-engine';
 import { createContextualBatches } from '@/lib/translation/chunker';
@@ -32,11 +32,23 @@ import { deleteJob, getJob, saveJob } from '@/lib/storage/job-store';
 import { UI_TRANSLATIONS } from '@/lib/i18n/translations';
 import { SAMPLE_SUBTITLE_FILES } from '@/lib/sample-subtitles';
 import type { AIProviderAdapter, AIGenerateRequest, AIGenerateResponse } from '@/lib/ai/types';
-import { extractJsonFromResponse, createAdapterFromUserConfig } from '@/lib/ai/providers';
+import * as providersModule from '@/lib/ai/providers';
+import {
+  extractJsonFromResponse,
+  createAdapterFromUserConfig,
+  getPublicAIConfigState,
+  resolveRequestAIAdapter,
+} from '@/lib/ai/providers';
+import {
+  isPermittedLocalLoopbackBaseUrl,
+  resolveSafeDeepSeekBaseUrl,
+  validateCustomBaseUrl,
+} from '@/lib/security/url-safety';
 import { applyUserConfigToAIState, maskApiKey } from '@/lib/storage/client-config';
 import type { TranslationJob, TranslationPreferencesConfig } from '@/types/subtitle';
 import {
   applyLinearTransform,
+  decodeSubtitleBytes,
   fpsConversionScale,
   parseFlexibleTimeToMs,
   parseTimedSubtitle,
@@ -206,7 +218,7 @@ class ContextualTestAIAdapter implements AIProviderAdapter {
       }>;
 
       const corrections = items.map((item) => {
-        let revised = item.currentTranslation
+        const revised = item.currentTranslation
           .replace(/Syndicate/gi, 'النقابة')
           .replace(/quickly/gi, 'بسرعة')
           .replace(/انشاء الله/g, 'إن شاء الله')
@@ -867,5 +879,165 @@ Wait for me at the gate.
     assert.equal(roundTrip.format, 'vtt');
     assert.equal(roundTrip.cues.length, 3);
     assert.equal(roundTrip.cues[1].text, 'مرحباً');
+  });
+
+  it('Test 12: Security — SSRF URL restriction, DeepSeek host check, and BYOK server isolation', () => {
+    // 1. Valid HTTPS custom endpoint normalizes trailing slashes
+    assert.equal(
+      validateCustomBaseUrl('https://openrouter.ai/api/v1/'),
+      'https://openrouter.ai/api/v1'
+    );
+
+    // 2. Reject insecure schemes, credentials, internal names, private & metadata IPs
+    const blockedUrls = [
+      '',
+      'not-a-url',
+      'http://openrouter.ai/api/v1',
+      'file:///etc/passwd',
+      'https://user:pass@api.openai.com/v1',
+      'https://api.openai.com/v1#frag',
+      'https://api.openai.com/v1?x=1',
+      'https://169.254.169.254/latest/meta-data',
+      'http://169.254.169.254/latest/meta-data',
+      'https://metadata.google.internal/computeMetadata/v1',
+      'https://10.0.0.1/v1',
+      'https://172.16.0.10/v1',
+      'https://192.168.1.50/v1',
+      'https://127.0.0.1:8080/v1',
+      'https://localhost:11434/v1',
+      'http://localhost:11434/v1',
+      'https://[::1]:11434/v1',
+      'https://[fd00:ec2::254]/v1',
+      'https://[::ffff:127.0.0.1]/v1',
+      'https://redis/v1',
+    ];
+    for (const candidate of blockedUrls) {
+      assert.throws(() => validateCustomBaseUrl(candidate, { allowLocalLoopback: false }), candidate);
+    }
+
+    // 3. Explicit local loopback opt-in allows localhost/127.0.0.1 ONLY, while still blocking metadata/LAN IPs
+    assert.equal(
+      validateCustomBaseUrl('http://localhost:11434/v1/', { allowLocalLoopback: true }),
+      'http://localhost:11434/v1'
+    );
+    assert.throws(() =>
+      validateCustomBaseUrl('https://169.254.169.254/v1', { allowLocalLoopback: true })
+    );
+    assert.throws(() =>
+      validateCustomBaseUrl('https://10.0.0.1/v1', { allowLocalLoopback: true })
+    );
+    assert.equal(isPermittedLocalLoopbackBaseUrl('https://evil.com/localhost', true), false);
+    assert.equal(isPermittedLocalLoopbackBaseUrl('http://127.0.0.1:11434/v1', true), true);
+
+    // 4. DeepSeek URL bypass via query string is rejected
+    assert.equal(resolveSafeDeepSeekBaseUrl('https://evil.com/?deepseek'), 'https://api.deepseek.com');
+    assert.equal(resolveSafeDeepSeekBaseUrl('https://api.deepseek.com/v1/'), 'https://api.deepseek.com/v1');
+
+    // 5. Adapter creation and route resolver block unsafe custom URLs even when apiKey is empty
+    assert.throws(() =>
+      createAdapterFromUserConfig({
+        provider: 'custom',
+        apiKey: 'sk-test',
+        customBaseUrl: 'https://169.254.169.254/v1',
+      })
+    );
+    assert.throws(() =>
+      resolveRequestAIAdapter({
+        provider: 'custom',
+        customBaseUrl: 'https://10.0.0.2/v1',
+      })
+    );
+
+    // 6. Server BYOK isolation: no POST handler on /api/config and no saveRuntimeAIConfig persistence
+    const configRouteSrc = fs.readFileSync(
+      path.join(process.cwd(), 'src', 'app', 'api', 'config', 'route.ts'),
+      'utf8'
+    );
+    assert.equal(/export\s+(?:async\s+)?function\s+POST\b/.test(configRouteSrc), false);
+    assert.equal('saveRuntimeAIConfig' in providersModule, false);
+    assert.notEqual(getPublicAIConfigState().configuredSource, 'runtime');
+
+    // 7. Clearing browser key does not preserve stale client-browser configured state
+    const previousClientMerged = applyUserConfigToAIState(null, {
+      provider: 'gemini',
+      model: 'gemini-3.1-flash-lite',
+      apiKeys: { gemini: 'AIzaTestKey123456' },
+    });
+    assert.equal(previousClientMerged.isConfigured, true);
+
+    const clearedClientMerged = applyUserConfigToAIState(previousClientMerged, {
+      provider: 'gemini',
+      model: 'gemini-3.1-flash-lite',
+      apiKeys: {},
+    });
+    assert.equal(clearedClientMerged.isConfigured, false);
+    assert.equal(clearedClientMerged.configuredSource, 'none');
+    assert.equal(clearedClientMerged.maskedKey, undefined);
+  });
+
+  it('Test 13: Phase 2 Fixes — Windows-1256 upload decoding and Unicode/global glossary QA repair', () => {
+    // 1. UTF-8 and Windows-1256 SRT byte decoding
+    const utf8Bytes = new TextEncoder().encode('1\r\n00:00:01,000 --> 00:00:03,000\r\nأهلا بك\r\n');
+    assert.ok(decodeSubtitleBytes(utf8Bytes.buffer).includes('أهلا بك'));
+
+    // "مرحبا" in Windows-1256 (0xE3 0xD1 0xCD 0xC8 0xC7) - invalid UTF-8 triggers Windows-1256 fallback
+    const win1256Prefix = new TextEncoder().encode('1\r\n00:00:01,000 --> 00:00:03,000\r\n');
+    const win1256ArabicWord = new Uint8Array([0xe3, 0xd1, 0xcd, 0xc8, 0xc7]);
+    const win1256Combined = new Uint8Array(win1256Prefix.length + win1256ArabicWord.length);
+    win1256Combined.set(win1256Prefix, 0);
+    win1256Combined.set(win1256ArabicWord, win1256Prefix.length);
+
+    const decodedWin1256 = decodeSubtitleBytes(win1256Combined.buffer);
+    assert.ok(decodedWin1256.includes('مرحبا'));
+    const parsedWin1256 = parseSrtContent(decodedWin1256);
+    assert.equal(parsedWin1256.entries.length, 1);
+    assert.equal(parsedWin1256.entries[0]?.originalText, 'مرحبا');
+
+    // 2. Glossary validation: multiple occurrences, non-Latin Unicode boundaries, punctuation-ending terms, literal '$'
+    const parsedBaseline = parseSrtContent(
+      '1\r\n00:00:01,000 --> 00:00:04,000\r\nJohn told Johnson about Dr. Strange at the café for PRICE.\r\n'
+    );
+    const originalEntries = parsedBaseline.entries;
+
+    const corruptedTranslatedEntries = [
+      {
+        ...originalEntries[0]!,
+        startTime: '99:99:99,000',
+        endTime: '99:99:99,999',
+        rawTimestampLine: '99:99:99,000 --> 99:99:99,999',
+        translatedText: 'أخبر John المدعو Johnson عن Dr. Strange في café بسعر PRICE أو John.',
+      },
+    ];
+
+    const qaResult = validateAndRepairTranslations({
+      originalEntries,
+      translatedEntries: corruptedTranslatedEntries,
+      sourceLanguage: 'en',
+      targetLanguage: 'ar',
+      glossary: [
+        { id: 'g-john', sourceTerm: 'John', targetTerm: 'جون', category: 'character' },
+        { id: 'g-dr', sourceTerm: 'Dr.', targetTerm: 'د.', category: 'terminology' },
+        { id: 'g-cafe', sourceTerm: 'café', targetTerm: 'المقهى', category: 'terminology' },
+        { id: 'g-price', sourceTerm: 'PRICE', targetTerm: '$100', category: 'terminology' },
+      ],
+    });
+
+    const repaired = qaResult.repairedEntries[0];
+    assert.ok(repaired);
+    // Genuine timestamp baseline from originalEntries must be restored
+    assert.equal(repaired.startTime, '00:00:01,000');
+    assert.equal(repaired.endTime, '00:00:04,000');
+    assert.ok(qaResult.report.issues.some((i) => i.type === 'timestamp_modified'));
+
+    const repairedText = repaired.translatedText || '';
+    // Both occurrences of John replaced, without corrupting Johnson
+    assert.equal(repairedText.includes('Johnson'), true);
+    assert.equal((repairedText.match(/جون/g) || []).length, 2);
+    assert.equal(/\bJohn\b/.test(repairedText), false);
+    // Punctuation-ending term ("Dr.") and Unicode-ending term ("café") replaced
+    assert.equal(repairedText.includes('د.'), true);
+    assert.equal(repairedText.includes('المقهى'), true);
+    // '$' replacement pattern is treated literally
+    assert.equal(repairedText.includes('$100'), true);
   });
 });

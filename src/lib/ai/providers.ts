@@ -1,7 +1,15 @@
-import fs from 'fs';
-import path from 'path';
+import dns from 'node:dns/promises';
+import net from 'node:net';
 import type { z } from 'zod';
 import type { AIProviderType, UserClientAIConfig } from '@/types/subtitle';
+import {
+  isBlockedIpAddress,
+  isExplicitLoopbackHost,
+  isLocalLoopbackOptInEnabled,
+  isPermittedLocalLoopbackBaseUrl,
+  resolveSafeDeepSeekBaseUrl,
+  validateCustomBaseUrl,
+} from '@/lib/security/url-safety';
 import type {
   AIGenerateRequest,
   AIGenerateResponse,
@@ -23,72 +31,40 @@ export const DEFAULT_MODELS: Record<AIProviderType, string[]> = {
   custom: ['deepseek-chat', 'llama-3.3-70b-versatile', 'qwen-2.5-72b-instruct'],
 };
 
-interface PersistedRuntimeConfig {
-  provider?: AIProviderType;
-  model?: string;
-  temperature?: number;
-  maxRetries?: number;
-  customBaseUrl?: string;
-  apiKeys?: Partial<Record<AIProviderType, string>>;
-}
-
-const CONFIG_FILE_PATH = path.join(process.cwd(), 'data', 'config', 'ai-settings.json');
-let runtimeMemoryConfig: PersistedRuntimeConfig = {};
-
-function readRuntimeConfig(): PersistedRuntimeConfig {
-  let diskConfig: PersistedRuntimeConfig = {};
-  try {
-    if (fs.existsSync(CONFIG_FILE_PATH)) {
-      const raw = fs.readFileSync(CONFIG_FILE_PATH, 'utf8');
-      diskConfig = JSON.parse(raw) as PersistedRuntimeConfig;
-    }
-  } catch {
-    // Ignore read error on serverless / read-only filesystem
-  }
-  return {
-    ...diskConfig,
-    ...runtimeMemoryConfig,
-    apiKeys: {
-      ...(diskConfig.apiKeys || {}),
-      ...(runtimeMemoryConfig.apiKeys || {}),
-    },
-  };
-}
-
-export function saveRuntimeAIConfig(update: Partial<PersistedRuntimeConfig> & { apiKey?: string }): void {
-  const existing = readRuntimeConfig();
-  const provider = update.provider || existing.provider || (process.env.AI_PROVIDER as AIProviderType) || 'gemini';
-  const apiKeys = { ...(existing.apiKeys || {}) };
-  if (update.apiKey !== undefined && update.apiKey.trim() !== '') {
-    apiKeys[provider] = update.apiKey.trim();
-  }
-
-  const merged: PersistedRuntimeConfig = {
-    provider,
-    model: update.model ?? existing.model,
-    temperature: update.temperature ?? existing.temperature ?? 0.2,
-    maxRetries: update.maxRetries ?? existing.maxRetries ?? 3,
-    customBaseUrl: update.customBaseUrl ?? existing.customBaseUrl,
-    apiKeys,
-  };
-
-  runtimeMemoryConfig = merged;
-
-  try {
-    const dir = path.dirname(CONFIG_FILE_PATH);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(merged, null, 2), 'utf8');
-  } catch {
-    // Gracefully handle read-only environments on serverless hosts (e.g. Vercel)
-  }
-}
-
 function maskKey(key?: string): string | undefined {
   if (!key || key.trim().length < 6) return undefined;
   const trimmed = key.trim();
   return `${trimmed.slice(0, 4)}...${trimmed.slice(-4)}`;
+}
+
+/**
+ * Resolves DNS right before outbound custom-endpoint requests to block DNS rebinding
+ * to loopback, private, link-local, or cloud metadata IP addresses.
+ */
+async function assertSafeOutboundCustomUrl(rawUrl: string): Promise<string> {
+  const safeBase = validateCustomBaseUrl(rawUrl);
+  const parsed = new URL(safeBase);
+  const host = parsed.hostname.replace(/^\[|\]$/g, '');
+
+  if (isLocalLoopbackOptInEnabled() && isExplicitLoopbackHost(host)) {
+    return safeBase;
+  }
+
+  if (net.isIP(host) === 0) {
+    const records = await dns.lookup(host, { all: true });
+    if (records.length === 0) {
+      throw new Error(`Unsafe Custom AI base URL: hostname "${host}" could not be resolved.`);
+    }
+    for (const record of records) {
+      if (isBlockedIpAddress(record.address, false)) {
+        throw new Error(
+          `Unsafe Custom AI base URL: hostname "${host}" resolved to blocked internal/private IP "${record.address}".`
+        );
+      }
+    }
+  }
+
+  return safeBase;
 }
 
 export function resolveAIConfig(): {
@@ -98,20 +74,15 @@ export function resolveAIConfig(): {
   customBaseUrl: string;
   temperature: number;
   maxRetries: number;
-  configuredSource: 'env' | 'runtime' | 'none';
+  configuredSource: 'env' | 'none';
 } {
-  const runtime = readRuntimeConfig();
-  const envProvider = (process.env.AI_PROVIDER?.toLowerCase() as AIProviderType) || 'gemini';
-  const provider: AIProviderType = runtime.provider || envProvider;
+  const provider = (process.env.AI_PROVIDER?.toLowerCase() as AIProviderType) || 'gemini';
 
   const defaultModel = DEFAULT_MODELS[provider]?.[0] || 'gemini-3.5-flash-lite';
-  const model = runtime.model || process.env.AI_MODEL || defaultModel;
-  const temperature = runtime.temperature ?? Number(process.env.AI_TEMPERATURE || 0.2);
-  const maxRetries = runtime.maxRetries ?? Number(process.env.AI_MAX_RETRIES || 3);
-  const customBaseUrl =
-    runtime.customBaseUrl ||
-    process.env.CUSTOM_AI_BASE_URL ||
-    'https://api.openai.com/v1';
+  const model = process.env.AI_MODEL || defaultModel;
+  const temperature = Number(process.env.AI_TEMPERATURE || 0.2);
+  const maxRetries = Number(process.env.AI_MAX_RETRIES || 3);
+  const customBaseUrl = process.env.CUSTOM_AI_BASE_URL || 'https://api.openai.com/v1';
 
   let envKey = '';
   if (provider === 'gemini') envKey = process.env.GEMINI_API_KEY || '';
@@ -120,18 +91,12 @@ export function resolveAIConfig(): {
   else if (provider === 'anthropic') envKey = process.env.ANTHROPIC_API_KEY || '';
   else if (provider === 'custom') envKey = process.env.CUSTOM_AI_API_KEY || process.env.OPENAI_API_KEY || '';
 
-  const runtimeKey = runtime.apiKeys?.[provider] || '';
-  const apiKey = runtimeKey || envKey;
-  const configuredSource: 'env' | 'runtime' | 'none' = runtimeKey
-    ? 'runtime'
-    : envKey
-      ? 'env'
-      : 'none';
+  const configuredSource: 'env' | 'none' = envKey ? 'env' : 'none';
 
   return {
     provider,
     model,
-    apiKey,
+    apiKey: envKey,
     customBaseUrl,
     temperature,
     maxRetries,
@@ -144,8 +109,7 @@ export function getPublicAIConfigState(): ServerAIConfigState {
   const isConfigured = Boolean(
     resolved.apiKey ||
       (resolved.provider === 'custom' &&
-        (resolved.customBaseUrl.includes('localhost') ||
-          resolved.customBaseUrl.includes('127.0.0.1')))
+        isPermittedLocalLoopbackBaseUrl(resolved.customBaseUrl))
   );
 
   const envVarName =
@@ -271,17 +235,21 @@ export class ConfigurableAIProviderAdapter implements AIProviderAdapter {
     this.provider = overrides?.provider || resolved.provider;
     this.model = overrides?.model || resolved.model;
     this.apiKey = overrides?.apiKey ?? resolved.apiKey;
-    this.customBaseUrl = overrides?.customBaseUrl || resolved.customBaseUrl;
+    const rawCustomBaseUrl = overrides?.customBaseUrl || resolved.customBaseUrl;
+    this.customBaseUrl =
+      this.provider === 'custom'
+        ? validateCustomBaseUrl(rawCustomBaseUrl)
+        : rawCustomBaseUrl;
     this.defaultTemp = overrides?.temperature ?? resolved.temperature;
     this.defaultRetries = overrides?.maxRetries ?? resolved.maxRetries;
   }
 
   isConfigured(): boolean {
     if (this.apiKey && this.apiKey.trim().length > 0) return true;
-    // Allow local Ollama/vLLM endpoints on localhost without API key
+    // Allow local Ollama/vLLM endpoints only when explicitly enabled via ALLOW_LOCAL_AI_ENDPOINTS=true
     if (
       this.provider === 'custom' &&
-      (this.customBaseUrl.includes('localhost') || this.customBaseUrl.includes('127.0.0.1'))
+      isPermittedLocalLoopbackBaseUrl(this.customBaseUrl)
     ) {
       return true;
     }
@@ -319,10 +287,10 @@ export class ConfigurableAIProviderAdapter implements AIProviderAdapter {
     // DeepSeek, OpenAI, or Custom OpenAI-compatible
     const baseUrl =
       this.provider === 'deepseek'
-        ? (this.customBaseUrl && this.customBaseUrl.includes('deepseek') ? this.customBaseUrl.replace(/\/+$/, '') : 'https://api.deepseek.com')
+        ? resolveSafeDeepSeekBaseUrl(this.customBaseUrl)
         : this.provider === 'openai'
           ? 'https://api.openai.com/v1'
-          : this.customBaseUrl.replace(/\/+$/, '');
+          : validateCustomBaseUrl(this.customBaseUrl);
     return this.callOpenAICompatible(baseUrl, request, temperature);
   }
 
@@ -350,11 +318,13 @@ export class ConfigurableAIProviderAdapter implements AIProviderAdapter {
         };
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
-        // Do not retry if the API key itself is missing or invalid (401/403)
+        // Do not retry non-transient configuration, authentication, or SSRF policy errors
         if (
           lastError.message.includes('Missing API key') ||
           lastError.message.includes('401') ||
-          lastError.message.includes('invalid_api_key')
+          lastError.message.includes('invalid_api_key') ||
+          lastError.message.includes('Custom AI base URL') ||
+          lastError.message.includes('Unsafe Custom AI base URL')
         ) {
           throw lastError;
         }
@@ -431,7 +401,9 @@ export class ConfigurableAIProviderAdapter implements AIProviderAdapter {
     request: AIGenerateRequest,
     temperature: number
   ): Promise<AIGenerateResponse> {
-    const url = `${baseUrl}/chat/completions`;
+    const verifiedBaseUrl =
+      this.provider === 'custom' ? await assertSafeOutboundCustomUrl(baseUrl) : baseUrl;
+    const url = `${verifiedBaseUrl}/chat/completions`;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
@@ -458,6 +430,7 @@ export class ConfigurableAIProviderAdapter implements AIProviderAdapter {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
+      redirect: 'error',
     });
 
     if (!response.ok) {
@@ -545,7 +518,13 @@ export function getAIProviderAdapter(): AIProviderAdapter {
 export function createAdapterFromUserConfig(
   userConfig?: Partial<UserClientAIConfig>
 ): ConfigurableAIProviderAdapter {
-  if (userConfig && userConfig.provider && userConfig.apiKey) {
+  if (
+    userConfig &&
+    userConfig.provider &&
+    (userConfig.apiKey ||
+      (userConfig.provider === 'custom' &&
+        isPermittedLocalLoopbackBaseUrl(userConfig.customBaseUrl)))
+  ) {
     return new ConfigurableAIProviderAdapter({
       provider: userConfig.provider,
       model: userConfig.model,
@@ -556,4 +535,24 @@ export function createAdapterFromUserConfig(
     });
   }
   return new ConfigurableAIProviderAdapter();
+}
+
+/**
+ * Resolves a request-scoped AI adapter and validates custom endpoints against SSRF rules.
+ */
+export function resolveRequestAIAdapter(
+  userConfig?: Partial<UserClientAIConfig>
+): AIProviderAdapter {
+  if (userConfig?.provider === 'custom' && userConfig.customBaseUrl) {
+    validateCustomBaseUrl(userConfig.customBaseUrl);
+  }
+  if (
+    userConfig?.provider &&
+    (userConfig.apiKey?.trim() ||
+      (userConfig.provider === 'custom' &&
+        isPermittedLocalLoopbackBaseUrl(userConfig.customBaseUrl)))
+  ) {
+    return createAdapterFromUserConfig(userConfig);
+  }
+  return getAIProviderAdapter();
 }

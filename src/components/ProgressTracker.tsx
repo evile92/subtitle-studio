@@ -191,8 +191,9 @@ export function ProgressTracker({
             )}
             <button
               type="button"
+              disabled={isProcessing}
               onClick={onResumeJob}
-              className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white"
+              className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:pointer-events-none text-white"
             >
               {t.actions.resumeTranslation}
             </button>

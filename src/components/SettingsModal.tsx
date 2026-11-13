@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   X,
   Settings,
@@ -9,13 +9,13 @@ import {
   CheckCircle2,
   AlertCircle,
   Save,
-  Loader2,
   Server,
   ShieldCheck,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { ServerAIConfigState } from '@/lib/ai/types';
 import { AIProviderType } from '@/types/subtitle';
+import { validateCustomBaseUrl } from '@/lib/security/url-safety';
 import {
   applyUserConfigToAIState,
   loadStoredUserConfig,
@@ -36,47 +36,60 @@ export function SettingsModal({
   aiConfig,
   onConfigSaved,
 }: SettingsModalProps) {
+  if (!isOpen) return null;
+
+  return (
+    <SettingsModalContent
+      onClose={onClose}
+      aiConfig={aiConfig}
+      onConfigSaved={onConfigSaved}
+    />
+  );
+}
+
+function SettingsModalContent({
+  onClose,
+  aiConfig,
+  onConfigSaved,
+}: Omit<SettingsModalProps, 'isOpen'>) {
   const { uiLang, appName, setAppName } = useApp();
 
-  const [provider, setProvider] = useState<AIProviderType>('deepseek');
-  const [model, setModel] = useState('deepseek-flash');
-  const [apiKey, setApiKey] = useState('');
-  const [apiKeysMap, setApiKeysMap] = useState<Partial<Record<AIProviderType, string>>>({});
-  const [customBaseUrl, setCustomBaseUrl] = useState('https://api.openai.com/v1');
-  const [temperature, setTemperature] = useState(0.2);
-  const [maxRetries, setMaxRetries] = useState(3);
-  const [platformNameInput, setPlatformNameInput] = useState(appName);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
-
-  // Initialize from client localStorage first, falling back to server state
-  useEffect(() => {
-    if (!isOpen) return;
-
+  const [initialSnapshot] = useState(() => {
     const stored = loadStoredUserConfig();
     const initialProvider = stored?.provider || aiConfig?.provider || 'deepseek';
     const initialModel =
       stored?.model ||
       aiConfig?.model ||
       (initialProvider === 'deepseek' ? 'deepseek-flash' : 'gemini-3.1-flash-lite');
-
-    setProvider(initialProvider);
-    setModel(initialModel);
-    setCustomBaseUrl(
-      stored?.customBaseUrl || aiConfig?.customBaseUrl || 'https://api.openai.com/v1'
-    );
-    setTemperature(stored?.temperature ?? aiConfig?.temperature ?? 0.2);
-    setMaxRetries(stored?.maxRetries ?? aiConfig?.maxRetries ?? 3);
-
     const keys = stored?.apiKeys || {};
-    setApiKeysMap(keys);
-    setApiKey(keys[initialProvider] || '');
 
-    setPlatformNameInput(appName);
-    setSaveMessage(null);
-  }, [aiConfig, appName, isOpen]);
+    return {
+      provider: initialProvider,
+      model: initialModel,
+      customBaseUrl:
+        stored?.customBaseUrl || aiConfig?.customBaseUrl || 'https://api.openai.com/v1',
+      temperature: stored?.temperature ?? aiConfig?.temperature ?? 0.2,
+      maxRetries: stored?.maxRetries ?? aiConfig?.maxRetries ?? 3,
+      apiKeysMap: keys,
+      apiKey: keys[initialProvider] || '',
+      platformNameInput: appName,
+    };
+  });
 
-  if (!isOpen) return null;
+  const [provider, setProvider] = useState<AIProviderType>(initialSnapshot.provider);
+  const [model, setModel] = useState(initialSnapshot.model);
+  const [apiKey, setApiKey] = useState(initialSnapshot.apiKey);
+  const [apiKeysMap, setApiKeysMap] = useState<Partial<Record<AIProviderType, string>>>(
+    initialSnapshot.apiKeysMap
+  );
+  const [customBaseUrl, setCustomBaseUrl] = useState(initialSnapshot.customBaseUrl);
+  const [temperature] = useState(initialSnapshot.temperature);
+  const [maxRetries] = useState(initialSnapshot.maxRetries);
+  const [platformNameInput, setPlatformNameInput] = useState(
+    initialSnapshot.platformNameInput
+  );
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   const defaultModelsMap: Record<AIProviderType, string[]> = {
     deepseek: ['deepseek-flash', 'deepseek-chat', 'deepseek-reasoner'],
@@ -96,10 +109,11 @@ export function SettingsModal({
     aiConfig?.availableModels?.[provider] || defaultModelsMap[provider] || [];
 
   const handleProviderChange = (nextProvider: AIProviderType) => {
-    // Preserve current typing in the map
-    const updatedMap = {
+    setErrorMessage(null);
+    setSaveMessage(null);
+    const updatedMap: Partial<Record<AIProviderType, string>> = {
       ...apiKeysMap,
-      ...(apiKey.trim() ? { [provider]: apiKey.trim() } : {}),
+      [provider]: apiKey.trim(),
     };
     setApiKeysMap(updatedMap);
 
@@ -116,6 +130,8 @@ export function SettingsModal({
   };
 
   const handleApiKeyChange = (val: string) => {
+    setErrorMessage(null);
+    setSaveMessage(null);
     setApiKey(val);
     setApiKeysMap((prev) => ({
       ...prev,
@@ -123,61 +139,57 @@ export function SettingsModal({
     }));
   };
 
-  const handleSave = async (e: React.FormEvent) => {
+  const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSaving(true);
+    setErrorMessage(null);
     setSaveMessage(null);
 
-    try {
-      setAppName(platformNameInput);
-
-      const updatedKeys = {
-        ...apiKeysMap,
-        ...(apiKey.trim() ? { [provider]: apiKey.trim() } : {}),
-      };
-
-      const newStoredConfig: StoredUserAIConfig = {
-        provider,
-        model,
-        customBaseUrl: provider === 'custom' ? customBaseUrl : undefined,
-        temperature,
-        maxRetries,
-        apiKeys: updatedKeys,
-      };
-
-      // 1. Save locally in user's browser (isolated BYOK)
-      saveStoredUserConfig(newStoredConfig);
-
-      // 2. Compute updated AI state immediately for UI
-      const updatedState = applyUserConfigToAIState(aiConfig, newStoredConfig);
-      onConfigSaved(updatedState);
-
-      // 3. Optional sync to server runtime memory (resilient on Vercel)
+    let normalizedCustomUrl: string | undefined;
+    if (provider === 'custom') {
       try {
-        await fetch('/api/config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            provider,
-            model,
-            apiKey: apiKey.trim() || undefined,
-            customBaseUrl,
-            temperature,
-            maxRetries,
-          }),
+        normalizedCustomUrl = validateCustomBaseUrl(customBaseUrl, {
+          allowLocalLoopback: true,
         });
-      } catch {
-        // Ignore server network/filesystem errors
+        setCustomBaseUrl(normalizedCustomUrl);
+      } catch (err) {
+        setErrorMessage(
+          err instanceof Error
+            ? err.message
+            : uiLang === 'ar'
+              ? 'رابط الخادم المخصص غير صالح أو غير مسموح به.'
+              : 'Custom base URL is invalid or blocked.'
+        );
+        return;
       }
-
-      setSaveMessage(
-        uiLang === 'ar'
-          ? 'تم حفظ مفتاحك وإعدادات النموذج في متصفحك بنجاح. مفتاحك خاص بك ولن يُشارك مع أحد، وجاهز للترجمة فوراً!'
-          : 'Settings and API key saved securely in your browser. Your key is private and ready for immediate translation!'
-      );
-    } finally {
-      setIsSaving(false);
     }
+
+    const cleanedKeys: Partial<Record<AIProviderType, string>> = {};
+    for (const [k, v] of Object.entries({ ...apiKeysMap, [provider]: apiKey })) {
+      if (typeof v === 'string' && v.trim()) {
+        cleanedKeys[k as AIProviderType] = v.trim();
+      }
+    }
+
+    const newStoredConfig: StoredUserAIConfig = {
+      provider,
+      model: model.trim() || defaultModelsMap[provider]?.[0] || 'deepseek-flash',
+      customBaseUrl: normalizedCustomUrl,
+      temperature,
+      maxRetries,
+      apiKeys: cleanedKeys,
+    };
+
+    setAppName(platformNameInput);
+    saveStoredUserConfig(newStoredConfig);
+
+    const updatedState = applyUserConfigToAIState(aiConfig, newStoredConfig);
+    onConfigSaved(updatedState);
+
+    setSaveMessage(
+      uiLang === 'ar'
+        ? 'تم حفظ مفتاحك وإعدادات النموذج في متصفحك فقط بنجاح. لم يتم إرسال أي مفتاح إلى الخادم، والمنصة جاهزة للترجمة!'
+        : 'Settings and API key saved securely in your browser only. No keys were sent to the server, and you are ready to translate!'
+    );
   };
 
   return (
@@ -400,6 +412,13 @@ export function SettingsModal({
             </p>
           </div>
 
+          {errorMessage && (
+            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
+              <bdi dir="ltr">{errorMessage}</bdi>
+            </div>
+          )}
+
           {saveMessage && (
             <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
@@ -417,14 +436,9 @@ export function SettingsModal({
             </button>
             <button
               type="submit"
-              disabled={isSaving}
               className="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5 transition-colors shadow-xs"
             >
-              {isSaving ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Save className="w-3.5 h-3.5" />
-              )}
+              <Save className="w-3.5 h-3.5" />
               <span>{uiLang === 'ar' ? 'حفظ الإعدادات' : 'Save Configuration'}</span>
             </button>
           </div>

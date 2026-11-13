@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   Sparkles,
   Play,
@@ -32,7 +32,6 @@ function GithubIcon({ className = 'w-4 h-4' }: { className?: string }) {
 import { useApp } from '@/context/AppContext';
 import {
   ArabicDialect,
-  JobSummary,
   SubtitleEntry,
   TranslationJob,
   TranslationPreferencesConfig,
@@ -48,9 +47,12 @@ import {
   createClientJobFromSrt,
   deleteClientJob,
   getClientJob,
-  getLastActiveClientJob,
-  listClientJobSummaries,
+  getClientJobSummariesSnapshot,
+  getLastActiveClientJobSnapshot,
+  getServerActiveJobSnapshot,
+  getServerJobSummariesSnapshot,
   saveClientJob,
+  subscribeClientJobs,
 } from '@/lib/storage/client-job-store';
 import { createContextualBatches } from '@/lib/translation/chunker';
 import { validateAndRepairTranslations } from '@/lib/translation/validator';
@@ -95,10 +97,26 @@ export default function HomePage() {
     customInstructions: '',
   });
 
-  // Active Job & Recent Jobs History
-  const [activeJob, setActiveJob] = useState<TranslationJob | null>(null);
+  // Active Job & Recent Jobs History (hydrated via external localStorage store)
+  const restoredActiveJob = useSyncExternalStore(
+    subscribeClientJobs,
+    getLastActiveClientJobSnapshot,
+    getServerActiveJobSnapshot
+  );
+  const recentJobs = useSyncExternalStore(
+    subscribeClientJobs,
+    getClientJobSummariesSnapshot,
+    getServerJobSummariesSnapshot
+  );
+  const [activeJobOverride, setActiveJobOverride] = useState<
+    TranslationJob | null | undefined
+  >(undefined);
+  const activeJob =
+    activeJobOverride === undefined ? restoredActiveJob : activeJobOverride;
+  const setActiveJob = setActiveJobOverride;
+
   const [isProcessingJob, setIsProcessingJob] = useState(false);
-  const [recentJobs, setRecentJobs] = useState<JobSummary[]>([]);
+  const isPipelineRunningRef = useRef(false);
   const [startError, setStartError] = useState<string | null>(null);
 
   // AI Provider Configuration & Modals
@@ -106,33 +124,23 @@ export default function HomePage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
 
-  const fetchAIConfig = useCallback(async () => {
-    try {
-      const res = await fetch('/api/config');
-      const data = res.ok ? await res.json() : null;
-      const merged = applyUserConfigToAIState(data, loadStoredUserConfig());
-      setAiConfig(merged);
-    } catch {
-      const fallback = applyUserConfigToAIState(null, loadStoredUserConfig());
-      setAiConfig(fallback);
-    }
-  }, []);
-
-  const fetchRecentJobs = useCallback(() => {
-    const summaries = listClientJobSummaries();
-    setRecentJobs(summaries);
-  }, []);
-
-  // Load initial config, recent jobs, and restore last active job from client storage
+  // Load initial non-secret server AI status and merge with browser BYOK config
   useEffect(() => {
-    fetchAIConfig();
-    fetchRecentJobs();
+    let cancelled = false;
 
-    const restored = getLastActiveClientJob();
-    if (restored) {
-      setActiveJob(restored);
-    }
-  }, [fetchAIConfig, fetchRecentJobs]);
+    fetch('/api/config')
+      .then((res) => (res.ok ? res.json() : null))
+      .catch(() => null)
+      .then((data) => {
+        if (cancelled) return;
+        const merged = applyUserConfigToAIState(data, loadStoredUserConfig());
+        setAiConfig(merged);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /**
    * Executes the translation pipeline step-by-step from the client browser using stateless API calls.
@@ -472,7 +480,6 @@ export default function HomePage() {
 
         saveClientJob(job);
         setActiveJob({ ...job });
-        fetchRecentJobs();
       }
 
       // STAGE 6 & 7: Consistency & 11-Point QA Validation + Auto-Repair (90% -> 100%)
@@ -534,8 +541,6 @@ export default function HomePage() {
 
       saveClientJob(job);
       setActiveJob({ ...job });
-      fetchRecentJobs();
-      setIsProcessingJob(false);
       setActiveView('workspace');
     } catch (err) {
       const message =
@@ -553,13 +558,16 @@ export default function HomePage() {
       );
       saveClientJob(job);
       setActiveJob({ ...job });
-      fetchRecentJobs();
+    } finally {
+      isPipelineRunningRef.current = false;
       setIsProcessingJob(false);
     }
   };
 
   const handleStartTranslation = async () => {
-    if (!uploadedFile) return;
+    if (!uploadedFile || isPipelineRunningRef.current) return;
+    isPipelineRunningRef.current = true;
+    setIsProcessingJob(true);
     setStartError(null);
 
     try {
@@ -575,7 +583,6 @@ export default function HomePage() {
       });
 
       setActiveJob(createdJob);
-      fetchRecentJobs();
       setActiveView('progress');
 
       await runClientDrivenPipeline(createdJob);
@@ -583,18 +590,27 @@ export default function HomePage() {
       setStartError(
         err instanceof Error ? err.message : 'Failed to start translation.'
       );
+      isPipelineRunningRef.current = false;
       setIsProcessingJob(false);
     }
   };
 
   const handleResumeJob = async (jobId: string) => {
+    if (isPipelineRunningRef.current) return;
     setStartError(null);
     const saved = getClientJob(jobId);
-    if (saved) {
+    if (!saved) return;
+    if (saved.stage === 'completed') {
       setActiveJob(saved);
-      setActiveView('progress');
-      await runClientDrivenPipeline(saved);
+      setActiveView('workspace');
+      return;
     }
+
+    isPipelineRunningRef.current = true;
+    setIsProcessingJob(true);
+    setActiveJob(saved);
+    setActiveView('progress');
+    await runClientDrivenPipeline(saved);
   };
 
   const handleOpenJobInWorkspace = async (jobId: string) => {
@@ -611,7 +627,6 @@ export default function HomePage() {
       setActiveJob(null);
       setActiveView('dashboard');
     }
-    fetchRecentJobs();
   };
 
   return (
@@ -799,6 +814,7 @@ export default function HomePage() {
             {recentJobs.length > 0 && (
               <RecentHistory
                 jobs={recentJobs.slice(0, 5)}
+                isProcessing={isProcessingJob}
                 onOpenJob={handleOpenJobInWorkspace}
                 onResumeJob={handleResumeJob}
                 onDeleteJob={handleDeleteJob}
@@ -821,10 +837,10 @@ export default function HomePage() {
         {/* VIEW 3: FULL SUBTITLE REVIEW WORKSPACE & EDITOR */}
         {activeView === 'workspace' && activeJob && (
           <SubtitleWorkspace
+            key={activeJob.id}
             job={activeJob}
             onJobUpdated={(updated) => {
               setActiveJob(updated);
-              fetchRecentJobs();
             }}
             onStartNewTranslation={() => setActiveView('dashboard')}
           />
@@ -834,6 +850,7 @@ export default function HomePage() {
         {activeView === 'history' && (
           <RecentHistory
             jobs={recentJobs}
+            isProcessing={isProcessingJob}
             onOpenJob={handleOpenJobInWorkspace}
             onResumeJob={handleResumeJob}
             onDeleteJob={handleDeleteJob}

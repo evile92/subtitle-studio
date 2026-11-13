@@ -8,7 +8,7 @@ import type {
   TranslationPreferencesConfig,
 } from '@/types/subtitle';
 import type { AIProviderAdapter } from '@/lib/ai/types';
-import { createAdapterFromUserConfig, getAIProviderAdapter } from '@/lib/ai/providers';
+import { resolveRequestAIAdapter } from '@/lib/ai/providers';
 import { appendJobLog, getJob, saveJob } from '@/lib/storage/job-store';
 import {
   analyzeFullSubtitleContext,
@@ -136,11 +136,7 @@ export async function executeTranslationPipeline(
     throw new Error(`Translation job "${jobId}" not found.`);
   }
 
-  const aiAdapter =
-    customAdapter ||
-    (job.userAIConfig?.apiKey
-      ? createAdapterFromUserConfig(job.userAIConfig)
-      : getAIProviderAdapter());
+  const aiAdapter = customAdapter || resolveRequestAIAdapter(job.userAIConfig);
   if (!aiAdapter.isConfigured()) {
     const msg = aiAdapter.getMissingConfigMessage();
     job.stage = 'failed';
@@ -681,11 +677,7 @@ export async function regenerateSingleSubtitleEntry(params: {
     throw new Error(`Job "${jobId}" not found.`);
   }
 
-  const aiAdapter =
-    customAdapter ||
-    (job.userAIConfig?.apiKey
-      ? createAdapterFromUserConfig(job.userAIConfig)
-      : getAIProviderAdapter());
+  const aiAdapter = customAdapter || resolveRequestAIAdapter(job.userAIConfig);
   if (!aiAdapter.isConfigured()) {
     throw new Error(aiAdapter.getMissingConfigMessage());
   }
@@ -734,6 +726,8 @@ export async function regenerateSingleSubtitleEntry(params: {
     ? normalizeArabicSubtitleText(data.translatedText, targetEntry.originalText)
     : preserveOuterFormattingTags(data.translatedText, targetEntry.originalText);
 
+  const baselineEntries = job.entries.map((entry) => ({ ...entry }));
+
   targetEntry.translatedText = normalizedText;
   targetEntry.aiTranslatedText = normalizedText;
   targetEntry.isEditedByUser = false;
@@ -742,7 +736,7 @@ export async function regenerateSingleSubtitleEntry(params: {
 
   // Re-run QA validation so the job's validation report stays up-to-date
   const qaResult = validateAndRepairTranslations({
-    originalEntries: job.entries,
+    originalEntries: baselineEntries,
     translatedEntries: job.entries,
     glossary: job.glossary,
     sourceLanguage: effectiveSourceLang,

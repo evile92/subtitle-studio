@@ -211,16 +211,24 @@ export function validateAndRepairTranslations(
         if (gItem.sourceTerm.length < 3) continue;
 
         const escapedSource = gItem.sourceTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const sourceRegex = new RegExp(`\\b${escapedSource}\\b`, 'i');
+        const startBoundary = /^[\p{L}\p{N}_]/u.test(gItem.sourceTerm)
+          ? '(?<![\\p{L}\\p{N}_])'
+          : '';
+        const endBoundary = /[\p{L}\p{N}_]$/u.test(gItem.sourceTerm)
+          ? '(?![\\p{L}\\p{N}_])'
+          : '';
+        const pattern = `${startBoundary}${escapedSource}${endBoundary}`;
+        const sourceTestRegex = new RegExp(pattern, 'iu');
+        const sourceReplaceRegex = new RegExp(pattern, 'giu');
 
-        if (sourceRegex.test(cleanOrig)) {
+        if (sourceTestRegex.test(cleanOrig)) {
           // If the source term was left untranslated in the target text when a different targetTerm exists
           if (
             gItem.sourceTerm.toLowerCase() !== gItem.targetTerm.toLowerCase() &&
-            sourceRegex.test(text) &&
+            sourceTestRegex.test(text) &&
             !text.includes(gItem.targetTerm)
           ) {
-            text = text.replace(sourceRegex, gItem.targetTerm);
+            text = text.replace(sourceReplaceRegex, () => gItem.targetTerm);
             issues.push({
               id: `glossary-${orig.sequence}-${gItem.id}`,
               sequence: orig.sequence,

@@ -35,13 +35,15 @@ export function saveStoredUserConfig(config: StoredUserAIConfig): void {
 export function getActiveUserClientAIConfig(): UserClientAIConfig | undefined {
   const stored = loadStoredUserConfig();
   if (!stored) return undefined;
-  const currentKey = stored.apiKeys?.[stored.provider];
-  if (!currentKey || !currentKey.trim()) return undefined;
+  const currentKey = stored.apiKeys?.[stored.provider]?.trim();
+  const hasCustomUrl =
+    stored.provider === 'custom' && Boolean(stored.customBaseUrl?.trim());
+  if (!currentKey && !hasCustomUrl) return undefined;
 
   return {
     provider: stored.provider,
     model: stored.model,
-    apiKey: currentKey.trim(),
+    apiKey: currentKey || undefined,
     customBaseUrl: stored.customBaseUrl,
     temperature: stored.temperature,
     maxRetries: stored.maxRetries,
@@ -91,7 +93,7 @@ export function applyUserConfigToAIState(
     };
   }
 
-  if (serverState) {
+  if (serverState && serverState.configuredSource !== 'client-browser') {
     return {
       ...serverState,
       provider: stored?.provider || serverState.provider,
@@ -101,10 +103,11 @@ export function applyUserConfigToAIState(
   }
 
   return {
-    provider: 'gemini',
-    model: 'gemini-3.1-flash-lite',
-    temperature: 0.2,
-    maxRetries: 3,
+    provider: stored?.provider || 'gemini',
+    model: stored?.model || 'gemini-3.1-flash-lite',
+    temperature: stored?.temperature ?? 0.2,
+    maxRetries: stored?.maxRetries ?? 3,
+    customBaseUrl: stored?.customBaseUrl,
     isConfigured: false,
     configuredSource: 'none',
     missingConfigMessage:

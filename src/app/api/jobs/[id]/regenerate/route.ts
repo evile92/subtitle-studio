@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { regenerateSingleSubtitleEntry } from '@/lib/translation/pipeline';
-import { createAdapterFromUserConfig } from '@/lib/ai/providers';
+import { resolveRequestAIAdapter } from '@/lib/ai/providers';
 import { checkRateLimit } from '@/lib/security/rate-limiter';
 import { UserClientAIConfig } from '@/types/subtitle';
 
@@ -30,8 +30,8 @@ export async function POST(
       );
     }
 
-    const customAdapter = userAIConfig?.apiKey
-      ? createAdapterFromUserConfig(userAIConfig)
+    const customAdapter = userAIConfig?.provider
+      ? resolveRequestAIAdapter(userAIConfig)
       : undefined;
 
     const result = await regenerateSingleSubtitleEntry({

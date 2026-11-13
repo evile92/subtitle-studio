@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { parseSrtContent, ParseResult } from '@/lib/srt/parser';
+import { decodeSubtitleBytes } from '@/lib/srt/sync';
 import { getLanguageName } from '@/lib/languages';
 import { SAMPLE_SUBTITLE_FILES, SampleSubtitleFile } from '@/lib/sample-subtitles';
 
@@ -137,7 +138,8 @@ export function UploadZone({
       return;
     }
 
-    const text = await file.text();
+    const buffer = await file.arrayBuffer();
+    const text = decodeSubtitleBytes(buffer);
     await processRawFileContent(file.name, file.size, text);
   };
 

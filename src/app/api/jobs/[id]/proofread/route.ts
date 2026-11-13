@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { proofreadSubtitleJob } from '@/lib/translation/proofreader';
-import { createAdapterFromUserConfig } from '@/lib/ai/providers';
+import { resolveRequestAIAdapter } from '@/lib/ai/providers';
 import { checkRateLimit } from '@/lib/security/rate-limiter';
 import { UserClientAIConfig } from '@/types/subtitle';
 
@@ -25,8 +25,8 @@ export async function POST(
       : undefined;
     const userAIConfig = body.userAIConfig as UserClientAIConfig | undefined;
 
-    const customAdapter = userAIConfig?.apiKey
-      ? createAdapterFromUserConfig(userAIConfig)
+    const customAdapter = userAIConfig?.provider
+      ? resolveRequestAIAdapter(userAIConfig)
       : undefined;
 
     const result = await proofreadSubtitleJob({
