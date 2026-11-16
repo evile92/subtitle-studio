@@ -50,29 +50,39 @@
 
 ## 🚀 Key Features / أبرز الميزات والقدرات
 
-### 1. ⏱️ Subtitle Sync & Release Converter (NEW) / أداة مزامنة التوقيت وتحويل النسخ (جديد)
+### 1. ⏱️ Subtitle Sync, YouTube Movie Studio & Release Converter (NEW) / استوديو مزامنة الترجمة وأفلام يوتيوب وتحويل النسخ (جديد)
 
 **English:**
-Fixes subtitles where dialogue runs ahead of or behind the video due to different studio intros or different frame rates between releases (e.g. BluRay 23.976 fps vs WEB-DL 24.000 fps vs European TV 25.000 fps). Operates 100% client-side in the browser, keeping all text and formatting tags completely untouched while rewriting only timestamps.
+Fixes subtitles where dialogue runs ahead of or behind the video due to different studio intros, YouTube edits, or different frame rates between releases (e.g. BluRay 23.976 fps vs WEB-DL 24.000 fps vs European TV 25.000 fps). Keeps all subtitle text and formatting tags 100% untouched while rewriting only timestamps.
 
-Features **3 practical synchronization modes**:
-* **Mode A — Auto Sync by Spoken Lines (Recommended):**
+Features **4 practical synchronization modes**:
+* **Mode A — YouTube Movie Sync & Built-in Cinema Player (NEW):**
+  Paste any YouTube movie link (e.g. `https://youtu.be/...`) and upload your Arabic/foreign `.SRT` or `.VTT` file:
+  * **Live Subtitle Overlay & Cinema Fullscreen:** Watch the YouTube movie directly inside the app with synchronized Arabic subtitles rendered over the video (`SM / MD / LG / XL` font sizing + Fullscreen Cinema mode with subtitles).
+  * **1-Click Visual Timing Capture:** Automatically skips translator credits (`Subtitles by...`, `ترجمة وإعداد...`) and `[Music]` cues to select the first real spoken dialogue line. Play the video and click **"Capture Current Video Time"** the instant the actor speaks to lock timing to the millisecond, plus live `±0.1s / ±0.5s / ±2s` nudge controls.
+  * **Auto-Sync with YouTube Captions & AI Translation:** Automatically fetch the YouTube video's native caption timeline (or paste its transcript in `JSON3`, `XML`, `SRT/VTT`, or YouTube "Show transcript" format) to align your subtitle via **Speech-Cadence Correlation**, or send extracted YouTube captions directly to the **AI Translator** in one click.
+* **Mode B — Auto Sync by Spoken Lines:**
   Play your video, find when 1 or 2 lines are spoken, and enter the times (e.g. `01:14.500` or `74.5`). One line corrects constant intro delays; adding a second line near the end automatically detects and resolves frame-rate drift (FPS drift) across the entire movie.
-* **Mode B — Frame Rate & Offset Converter:**
+* **Mode C — Frame Rate & Offset Converter:**
   Directly convert between industry frame rates (`23.976 fps BluRay` ⇄ `24.000 fps WEB-DL` ⇄ `25.000 fps PAL/HDTV`) with instant ±second intro offset buttons.
-* **Mode C — Copy Timing from Reference Subtitle:**
-  Upload any subtitle file (in any language, e.g. English WEB-DL) that is already in sync with your video. The tool transfers the exact timing to your target subtitle without altering a single translated word. Includes automatic legacy Windows-1256 Arabic encoding recovery.
+* **Mode D — Copy Timing from Reference Subtitle (Smart Cadence Alignment):**
+  Upload any subtitle file (in any language) that is already in sync with your video. Uses 1-to-1 copy when entry counts match, or filters out non-dialogue credit/music lines and applies **Speech-Cadence Cross-Correlation** when entry counts differ. Includes automatic legacy Windows-1256 Arabic encoding recovery.
 
 **العربية:**
-حل جذري لمشكلة عدم تطابق الترجمة مع الفيديو الناتجة عن اختلاف طول شارة البداية أو اختلاف سرعة الإطارات بين النسخ (مثل BluRay مقابل WEB-DL). الأداة تعمل بالكامل محلياً داخل المتصفح دون رفع الملفات لأي خادم، وتحافظ على النصوص ووسوم التنسيق 100% مع تعديل التوقيت فقط.
+حل جذري لمشكلة عدم تطابق الترجمة مع الفيديو الناتجة عن اختلاف طول شارة البداية أو نسخ أفلام يوتيوب أو اختلاف سرعة الإطارات بين النسخ (مثل BluRay مقابل WEB-DL). تحافظ الأداة على النصوص ووسوم التنسيق 100% مع تعديل التوقيت فقط.
 
-تتضمن **3 أوضاع تشغيل عملية**:
-* **الوضع الأول — المزامنة التلقائية بالجمل (الأسهل والأدق):**
+تتضمن **4 أوضاع تشغيل عملية**:
+* **الوضع الأول — مزامنة ومشغّل أفلام يوتيوب المدمج (جديد):**
+  ضع رابط أي فيلم على يوتيوب مع ملف الترجمة العربي الجاهز (`.SRT` أو `.VTT`):
+  * **معاينة حية ووضع سينما ملء الشاشة بالترجمة:** شاهد فيلم اليوتيوب مباشرةً داخل التطبيق مع عرض الترجمة العربية فوق الفيديو والتحكم بحجم الخط ووضع **ملء الشاشة مع الترجمة**.
+  * **المزامنة البصرية بنقرة زر واحدة:** يتخطى التطبيق تلقائياً أسطر حقوق المترجمين (`ترجمة وإعداد...`) ووسوم `[Music]` ليحدد أول جملة حوار حقيقية؛ وبمجرد سماعها في الفيديو تضغط **«التقط وقت الفيديو الحالي»** ليضبط التوقيت بالمللي ثانية دون كتابة أرقام يدوياً، مع أزرار ضبط فوري (`±0.1s / ±0.5s / ±2s`) أثناء المشاهدة.
+  * **مزامنة تلقائية مع نص يوتيوب أو ترجمته بالذكاء الاصطناعي:** سحب توقيتات يوتيوب تلقائياً (أو لصق النص من زر «إظهار النص» في يوتيوب) لمطابقة ملفك العربي عبر **بصمة إيقاع الحوار**، أو إرسال نص فيلم اليوتيوب المستخرج بضغطة زر إلى **لوحة الترجمة بالذكاء الاصطناعي** لتعريبه بالكامل.
+* **الوضع الثاني — المزامنة التلقائية بالجمل:**
   شغّل فيلمك، وابحث عن لحظة سماع سطر أو سطرين واكتب الوقت (مثال: `01:14.500` أو `74.5`). سطر واحد يصلح فارق البداية الثابت؛ وإضافة سطر ثانٍ قرب النهاية يكتشف تلقائياً انحراف سرعة الإطارات (FPS Drift) ويضبط الفيلم كاملاً في ثوانٍ.
-* **الوضع الثاني — تحويل معدل الإطارات والإزاحة (Frame Rate & Offset):**
+* **الوضع الثالث — تحويل معدل الإطارات والإزاحة (Frame Rate & Offset):**
   تحويل مباشر بين سرعات العرض المعروفة (`BluRay 23.976` ⇄ `WEB-DL 24.000` ⇄ `PAL/HDTV 25.000`) مع أزرار سريعة لتقديم وتأخير البداية بالثواني.
-* **الوضع الثالث — استنساخ التوقيت من ملف مرجعي (Reference Sync):**
-  إذا كان لديك ملف ترجمة بأي لغة أخرى متزامن مع نسختك، ترفع الملفين لتقوم الأداة بنسخ التوقيت المتزامن إلى ملفك العربي فوراً، مع دعم تشفير Windows-1256 للترجمات العربية القديمة.
+* **الوضع الرابع — استنساخ التوقيت الذكي من ملف مرجعي (Reference Sync):**
+  ارفع أي ملف ترجمة متزامن مع نسختك (بأي لغة) ليقوم التطبيق بنسخ التوقيت أو مطابقة بصمة الحوار تلقائياً بعد استبعاد شارات المترجمين والموسيقى، مع دعم تشفير Windows-1256 للترجمات العربية القديمة.
 
 ---
 
@@ -150,17 +160,20 @@ subtitle-studio/
 │   │       │   ├── analyze/route.ts      # Multi-pass full-script context analysis
 │   │       │   ├── translate-batch/route.ts # Context-aware batch translation
 │   │       │   └── proofread-batch/route.ts # Second-pass batch proofreading
+│   │       ├── youtube/                  # YouTube caption extraction endpoint
+│   │       │   └── captions/route.ts     # Safe YouTube caption track extraction API
 │   │       └── jobs/                     # Single-line regenerate & export routes
 │   ├── components/                       # Interactive UI components
 │   │   ├── Navbar.tsx                    # Responsive header with theme/lang switchers
-│   │   ├── SubtitleSyncTool.tsx          # Subtitle Sync & Release Converter interface
+│   │   ├── SubtitleSyncTool.tsx          # Subtitle Sync, YouTube Player & Release Converter
 │   │   ├── SubtitleWorkspace.tsx         # Side-by-side editor, filter & proofreader
 │   │   ├── SubtitlePreview.tsx           # 16:9 cinema viewport preview & CPS meter
 │   │   ├── UploadZone.tsx                # Drag-and-drop subtitle file upload
 │   │   └── SettingsModal.tsx             # Client BYOK AI provider configuration
 │   ├── lib/
 │   │   ├── srt/
-│   │   │   ├── sync.ts                   # Linear time transform, FPS & reference sync engine
+│   │   │   ├── sync.ts                   # Linear time transform, FPS & cadence sync engine
+│   │   │   ├── youtube.ts                # YouTube ID validator, transcript parser & ASR merger
 │   │   │   ├── parser.ts                 # SRT/VTT parser, tag & speaker extractor
 │   │   │   └── formatter.ts              # Valid SRT/VTT formatter with BOM
 │   │   ├── translation/
@@ -176,7 +189,7 @@ subtitle-studio/
 │   └── types/
 │       └── subtitle.ts                   # Core TypeScript type definitions
 └── tests/
-    └── subtitle-studio.test.ts           # 11 automated test suites covering all workflows
+    └── subtitle-studio.test.ts           # 16 automated test suites covering all workflows
 ```
 
 ---
