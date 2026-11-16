@@ -66,13 +66,20 @@ import type { TranslationJob, TranslationPreferencesConfig } from '@/types/subti
 import {
   applyLinearTransform,
   decodeSubtitleBytes,
+  findActiveCuesAtTime,
+  findRecommendedAnchorIndices,
   fpsConversionScale,
+  isLikelyNonDialogueCue,
   parseFlexibleTimeToMs,
   parseTimedSubtitle,
   serializeTimedSubtitle,
   syncFromReference,
   transformFromAnchors,
 } from '@/lib/srt/sync';
+import {
+  extractYouTubeVideoId,
+  parseYouTubeTranscriptPayload,
+} from '@/lib/srt/youtube';
 
 const DEFAULT_PREFS: TranslationPreferencesConfig = {
   style: 'natural',
@@ -1359,5 +1366,151 @@ Watch it fade the moon away
     assert.deepEqual(detected.sequences, [1, 2, 3, 4, 5]);
     assert.equal(detected.reasonsBySequence[6], undefined);
     assert.equal(detected.reasonsBySequence[7], undefined);
+  });
+
+  it('Test 16: YouTube Movie Sync — URL extraction, multi-format transcript parsing, credit filtering, and cadence alignment', () => {
+    // 1. Extract validated 11-char YouTube Video IDs across URL formats
+    assert.equal(extractYouTubeVideoId('https://youtu.be/GPSb--NaEUE'), 'GPSb--NaEUE');
+    assert.equal(
+      extractYouTubeVideoId('https://www.youtube.com/watch?v=GPSb--NaEUE&t=45s'),
+      'GPSb--NaEUE'
+    );
+    assert.equal(
+      extractYouTubeVideoId('https://m.youtube.com/embed/GPSb--NaEUE?autoplay=1'),
+      'GPSb--NaEUE'
+    );
+    assert.equal(
+      extractYouTubeVideoId('https://www.youtube.com/shorts/GPSb--NaEUE'),
+      'GPSb--NaEUE'
+    );
+    assert.equal(extractYouTubeVideoId('GPSb--NaEUE'), 'GPSb--NaEUE');
+    assert.equal(extractYouTubeVideoId('https://evil.com/watch?v=GPSb--NaEUE'), null);
+    assert.equal(extractYouTubeVideoId('not-a-valid-id'), null);
+
+    // 2. Filter non-dialogue cues (translator credits, watermarks, [Music], ♪)
+    assert.equal(isLikelyNonDialogueCue('ترجمة وإعداد: فريق السينما'), true);
+    assert.equal(isLikelyNonDialogueCue('Subtitles by OpenSubtitles.org'), true);
+    assert.equal(isLikelyNonDialogueCue('[Music]'), true);
+    assert.equal(isLikelyNonDialogueCue('♪ Let it go ♪'), true);
+    assert.equal(isLikelyNonDialogueCue('مرحباً، هل تسمعني بوضوح؟'), false);
+
+    const movieWithCredits = parseTimedSubtitle(`1
+00:00:02,000 --> 00:00:06,000
+ترجمة وإعداد: فلان
+
+2
+00:00:08,000 --> 00:00:11,000
+[Music]
+
+3
+00:00:20,000 --> 00:00:23,000
+أين كنت طوال هذا الوقت؟
+
+4
+00:15:00,000 --> 00:15:03,000
+علينا الخروج من هنا فوراً.
+
+5
+00:29:40,000 --> 00:29:43,000
+لقد انتهى كل شيء الآن.
+
+6
+00:29:55,000 --> 00:29:59,000
+Synced by www.subscene.com
+`).cues;
+
+    const bounds = findRecommendedAnchorIndices(movieWithCredits);
+    assert.equal(bounds.firstIdx, 2); // cue #3 (first real dialogue)
+    assert.equal(bounds.lastIdx, 4); // cue #5 (last real dialogue)
+
+    // 3. Active cue lookup for live video overlay
+    const activeAt21s = findActiveCuesAtTime(movieWithCredits, 21_500);
+    assert.equal(activeAt21s.length, 1);
+    assert.equal(activeAt21s[0].index, 3);
+
+    // 4. Parse YouTube JSON3, TimedText XML, and copy-pasted YouTube Transcript
+    const json3Sample = JSON.stringify({
+      events: [
+        { tStartMs: 4000, dDurationMs: 3500, segs: [{ utf8: 'We&#39;re running' }] },
+        { tStartMs: 5200, dDurationMs: 2000, segs: [{ utf8: 'out of time.' }] },
+        { tStartMs: 9000, dDurationMs: 2500, segs: [{ utf8: 'Stay close to me!' }] },
+      ],
+    });
+    const parsedJson3 = parseYouTubeTranscriptPayload(json3Sample);
+    assert.equal(parsedJson3.length, 2);
+    assert.equal(parsedJson3[0].text, "We're running out of time.");
+    assert.equal(parsedJson3[0].startMs, 4000);
+    assert.ok(parsedJson3[0].endMs <= parsedJson3[1].startMs);
+
+    const xmlSample =
+      '<transcript><text start="10.5" dur="2.0">First XML line.</text><text start="14.0" dur="2.5">Second XML line.</text></transcript>';
+    const parsedXml = parseYouTubeTranscriptPayload(xmlSample);
+    assert.equal(parsedXml.length, 2);
+    assert.equal(parsedXml[0].startMs, 10_500);
+    assert.equal(parsedXml[1].startMs, 14_000);
+
+    const pastedSample = `0:12
+Welcome to the station.
+0:17
+Show me your ticket please.`;
+    const parsedPasted = parseYouTubeTranscriptPayload(pastedSample);
+    assert.equal(parsedPasted.length, 2);
+    assert.equal(parsedPasted[0].startMs, 12_000);
+    assert.equal(parsedPasted[1].startMs, 17_000);
+
+    // 5. Reference sync ignores credit lines and recovers exact +12,000ms YouTube offset
+    const ytRefCues = parseTimedSubtitle(`1
+00:00:01,000 --> 00:00:04,000
+[Music]
+
+2
+00:00:32,000 --> 00:00:35,000
+Where have you been all this time?
+
+3
+00:08:10,000 --> 00:08:12,500
+Wait a second.
+
+4
+00:15:12,000 --> 00:15:15,000
+We need to get out of here right now.
+
+5
+00:29:52,000 --> 00:29:55,000
+It is all over now.
+`).cues;
+
+    const aligned = syncFromReference(movieWithCredits, ytRefCues);
+    // Cue #3 (index 2, originally 20,000ms) must align to 32,000ms (+12,000ms offset), unaffected by credit cues #1 and #6
+    assert.equal(aligned.cues[2].startMs, 32_000);
+    assert.equal(aligned.cues[4].startMs, 1_792_000);
+
+    // 6. Speech-cadence correlation recovers exact +15,000ms offset even when YouTube has an extra spoken channel intro cue
+    const baseTimes = [60, 75, 92, 110, 135, 160, 190, 225, 260, 300];
+    const targetMovieCues = baseTimes.map((sec, idx) => ({
+      index: idx + 1,
+      startMs: sec * 1000,
+      endMs: sec * 1000 + 2800,
+      text: `سطر حواري رقم ${idx + 1}`,
+    }));
+    const ytWithChannelIntro = [
+      {
+        index: 1,
+        startMs: 3000,
+        endMs: 5500,
+        text: 'Welcome back to our movie channel, subscribe now!',
+      },
+      ...baseTimes.map((sec, idx) => ({
+        index: idx + 2,
+        startMs: sec * 1000 + 15_000,
+        endMs: sec * 1000 + 15_000 + 2800,
+        text: `Dialogue line number ${idx + 1}`,
+      })),
+    ];
+
+    const cadenceAligned = syncFromReference(targetMovieCues, ytWithChannelIntro);
+    assert.equal(cadenceAligned.method, 'cadence_correlation');
+    assert.ok(Math.abs((cadenceAligned.transform?.offsetMs ?? 0) - 15_000) <= 200);
+    assert.ok(Math.abs(cadenceAligned.cues[0].startMs - 75_000) <= 200);
   });
 });

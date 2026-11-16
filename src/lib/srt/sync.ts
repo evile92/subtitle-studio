@@ -196,16 +196,142 @@ export function transformFromAnchors(
 
 export interface ReferenceSyncResult {
   cues: TimedCue[];
-  method: 'exact_copy' | 'linear_anchor';
+  method: 'exact_copy' | 'linear_anchor' | 'cadence_correlation';
   transform?: LinearTimeTransform;
+  confidence?: number;
   clampedCount: number;
 }
 
+const CREDIT_OR_WATERMARK_REGEX =
+  /(?:subtitles?\s+by|synced\s+by|synched\s+by|transcribed\s+by|ripped\s+by|encoded\s+by|opensubtitles|subscene|yts\.|yify|addic7ed|podnapisi|www\.|https?:\/\/|ترجم[ةه]\s*(?:و\s*إعداد|و\s*تعديل|و\s*مزامن[ةه]|:)|إعداد\s*وترجم[ةه]|حقوق\s*الترجم[ةه]|مزامن[ةه]\s*وتعديل|تابعونا\s*على)/i;
+
 /**
- * Re-times `target` cues using a `reference` subtitle that is already in sync with the video.
- * - Identical cue count: timings are copied 1-to-1 (exact match, e.g. same release in another language).
- * - Different cue count: a linear transform is fitted from the first and last cue of each file,
- *   which corrects both intro offset and frame-rate drift.
+ * Detects whether a subtitle cue is likely non-dialogue (translator credit, watermark,
+ * empty cue, pure music lyric ♪, or sound-effect tag like "[Music]" / "(Applause)").
+ */
+export function isLikelyNonDialogueCue(text: string): boolean {
+  const plain = text
+    .replace(/<[^>]+>/g, '')
+    .replace(/\{\\[^}]+\}/g, '')
+    .trim();
+
+  if (!plain) return true;
+  if (/^[♪♫♬\s.,!?؟…\-–—*#]+$/.test(plain)) return true;
+  if (/^[♪♫]/.test(plain) || /[♪♫]$/.test(plain)) return true;
+
+  // Entirely bracketed sound effects / SDH cues such as "[Music]", "(applause)", "[موسيقى]"
+  const lines = plain
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (
+    lines.length > 0 &&
+    lines.every(
+      (line) =>
+        (/^\[[^\]]+\]$/.test(line) || /^\([^)]+\)$/.test(line)) &&
+        line.length <= 45
+    )
+  ) {
+    return true;
+  }
+
+  if (CREDIT_OR_WATERMARK_REGEX.test(plain)) return true;
+
+  return false;
+}
+
+/**
+ * Finds the best first and last spoken-dialogue cue indices for anchor syncing,
+ * automatically skipping translator credits, "[Music]" tags, and song cues at the edges.
+ */
+export function findRecommendedAnchorIndices(cues: TimedCue[]): {
+  firstIdx: number;
+  lastIdx: number;
+} {
+  if (cues.length === 0) return { firstIdx: 0, lastIdx: 0 };
+  if (cues.length === 1) return { firstIdx: 0, lastIdx: 0 };
+
+  const headLimit = Math.min(cues.length - 1, Math.max(8, Math.floor(cues.length * 0.2)));
+  let firstIdx = 0;
+  for (let i = 0; i <= headLimit; i++) {
+    if (!isLikelyNonDialogueCue(cues[i].text)) {
+      firstIdx = i;
+      break;
+    }
+  }
+
+  const tailLimit = Math.max(firstIdx + 1, Math.floor(cues.length * 0.8));
+  let lastIdx = cues.length - 1;
+  for (let i = cues.length - 1; i >= tailLimit; i--) {
+    if (!isLikelyNonDialogueCue(cues[i].text)) {
+      lastIdx = i;
+      break;
+    }
+  }
+
+  if (lastIdx <= firstIdx) {
+    lastIdx = cues.length - 1;
+  }
+
+  return { firstIdx, lastIdx };
+}
+
+/**
+ * Returns all cues active at `currentTimeMs` (used by the live YouTube video overlay).
+ */
+export function findActiveCuesAtTime(cues: TimedCue[], currentTimeMs: number): TimedCue[] {
+  if (cues.length === 0 || currentTimeMs < 0) return [];
+  const active: TimedCue[] = [];
+  for (let i = 0; i < cues.length; i++) {
+    const cue = cues[i];
+    if (cue.endMs >= currentTimeMs && cue.startMs <= currentTimeMs) {
+      active.push(cue);
+    }
+  }
+  return active;
+}
+
+/**
+ * Computes the speech-interval overlap score (0..1) between transformed target cues
+ * and reference cues using 200ms time buckets.
+ */
+function scoreDialogueOverlap(
+  targetCues: TimedCue[],
+  refBuckets: Uint8Array,
+  bucketMs: number,
+  maxBucketIdx: number,
+  transform: LinearTimeTransform
+): number {
+  let matchedBuckets = 0;
+  let totalTargetBuckets = 0;
+
+  for (let i = 0; i < targetCues.length; i++) {
+    const c = targetCues[i];
+    const startMs = c.startMs * transform.scale + transform.offsetMs;
+    const endMs = c.endMs * transform.scale + transform.offsetMs;
+    const bStart = Math.floor(startMs / bucketMs);
+    const bEnd = Math.ceil(endMs / bucketMs);
+    const span = Math.max(1, Math.min(25, bEnd - bStart));
+    totalTargetBuckets += span;
+
+    if (bEnd < 0 || bStart > maxBucketIdx) continue;
+    const clampedStart = Math.max(0, bStart);
+    const clampedEnd = Math.min(maxBucketIdx, bStart + span);
+    for (let b = clampedStart; b < clampedEnd; b++) {
+      if (refBuckets[b]) matchedBuckets++;
+    }
+  }
+
+  return totalTargetBuckets > 0 ? matchedBuckets / totalTargetBuckets : 0;
+}
+
+/**
+ * Re-times `target` cues using a `reference` subtitle that is already in sync with the video
+ * (such as YouTube's built-in captions or another release subtitle).
+ * - Identical cue count: timings are copied 1-to-1 (exact match).
+ * - Different cue count: filters out non-dialogue credit/music cues and uses dialogue cadence
+ *   cross-correlation + anchor fitting to recover both intro offset and frame-rate drift even
+ *   when one file has extra intro/outro lines or different segmentation.
  */
 export function syncFromReference(target: TimedCue[], reference: TimedCue[]): ReferenceSyncResult {
   if (target.length === 0 || reference.length === 0) {
@@ -220,19 +346,157 @@ export function syncFromReference(target: TimedCue[], reference: TimedCue[]): Re
         endMs: reference[i].endMs,
       })),
       method: 'exact_copy',
+      confidence: 1,
       clampedCount: 0,
     };
   }
 
-  const transform = transformFromAnchors(
-    { subtitleMs: target[0].startMs, videoMs: reference[0].startMs },
+  const targetBounds = findRecommendedAnchorIndices(target);
+  const refBounds = findRecommendedAnchorIndices(reference);
+
+  const anchorTransform = transformFromAnchors(
+    { subtitleMs: target[targetBounds.firstIdx].startMs, videoMs: reference[refBounds.firstIdx].startMs },
     {
-      subtitleMs: target[target.length - 1].startMs,
-      videoMs: reference[reference.length - 1].startMs,
+      subtitleMs: target[targetBounds.lastIdx].startMs,
+      videoMs: reference[refBounds.lastIdx].startMs,
     }
   );
-  const applied = applyLinearTransform(target, transform);
-  return { cues: applied.cues, method: 'linear_anchor', transform, clampedCount: applied.clampedCount };
+
+  const dialogueTarget = target.filter((c) => !isLikelyNonDialogueCue(c.text));
+  const dialogueRef = reference.filter((c) => !isLikelyNonDialogueCue(c.text));
+
+  // For short snippets (< 8 dialogue cues), filtered first/last dialogue anchors are exact
+  if (dialogueTarget.length < 8 || dialogueRef.length < 8) {
+    const applied = applyLinearTransform(target, anchorTransform);
+    return {
+      cues: applied.cues,
+      method: 'linear_anchor',
+      transform: anchorTransform,
+      clampedCount: applied.clampedCount,
+    };
+  }
+
+  const BUCKET_MS = 200;
+  const maxRefEndMs = dialogueRef[dialogueRef.length - 1].endMs + 120_000;
+  const maxBucketIdx = Math.min(250_000, Math.ceil(maxRefEndMs / BUCKET_MS));
+  const refBuckets = new Uint8Array(maxBucketIdx + 1);
+
+  for (let i = 0; i < dialogueRef.length; i++) {
+    const bStart = Math.max(0, Math.floor(dialogueRef[i].startMs / BUCKET_MS));
+    const bEnd = Math.min(maxBucketIdx, Math.ceil(dialogueRef[i].endMs / BUCKET_MS));
+    for (let b = bStart; b <= bEnd; b++) {
+      refBuckets[b] = 1;
+    }
+  }
+
+  // Sample up to 240 dialogue cues (first 120 + last 120) for fast, high-precision correlation
+  const sampleTarget =
+    dialogueTarget.length <= 240
+      ? dialogueTarget
+      : [...dialogueTarget.slice(0, 120), ...dialogueTarget.slice(-120)];
+
+  let bestTransform: LinearTimeTransform =
+    anchorTransform.scale > 0.75 && anchorTransform.scale < 1.3
+      ? anchorTransform
+      : { scale: 1, offsetMs: reference[refBounds.firstIdx].startMs - target[targetBounds.firstIdx].startMs };
+
+  const baselineScore = scoreDialogueOverlap(
+    sampleTarget,
+    refBuckets,
+    BUCKET_MS,
+    maxBucketIdx,
+    bestTransform
+  );
+  let bestScore = baselineScore;
+  let usedCorrelation = false;
+
+  const candidateScales = [
+    1,
+    fpsConversionScale(23.976, 25),
+    fpsConversionScale(25, 23.976),
+    fpsConversionScale(23.976, 24),
+    fpsConversionScale(24, 23.976),
+    fpsConversionScale(23.976, 29.97),
+    fpsConversionScale(29.97, 23.976),
+  ];
+  if (anchorTransform.scale > 0.8 && anchorTransform.scale < 1.25) {
+    candidateScales.push(anchorTransform.scale);
+  }
+
+  // Generate candidate transforms by pairing early/late dialogue cues and testing standard FPS scales
+  const earlyT = dialogueTarget.slice(0, Math.min(8, dialogueTarget.length));
+  const earlyR = dialogueRef.slice(0, Math.min(12, dialogueRef.length));
+  const lateT = dialogueTarget.slice(-Math.min(8, dialogueTarget.length));
+  const lateR = dialogueRef.slice(-Math.min(12, dialogueRef.length));
+
+  for (const scale of candidateScales) {
+    const testedOffsets = new Set<number>();
+    for (const tc of earlyT) {
+      for (const rc of earlyR) {
+        const off = Math.round((rc.startMs - tc.startMs * scale) / 200) * 200;
+        if (Math.abs(off) <= 600_000) testedOffsets.add(off);
+      }
+    }
+    for (const tc of lateT) {
+      for (const rc of lateR) {
+        const off = Math.round((rc.startMs - tc.startMs * scale) / 200) * 200;
+        if (Math.abs(off) <= 600_000) testedOffsets.add(off);
+      }
+    }
+
+    for (const offsetMs of testedOffsets) {
+      const score = scoreDialogueOverlap(sampleTarget, refBuckets, BUCKET_MS, maxBucketIdx, {
+        scale,
+        offsetMs,
+      });
+      if (score > bestScore + 0.015) {
+        bestScore = score;
+        bestTransform = { scale, offsetMs };
+        usedCorrelation = true;
+      }
+    }
+  }
+
+  //Also test pairing early + late anchors across the first/last few genuine dialogue cues
+  for (let i = 0; i < Math.min(5, earlyT.length); i++) {
+    for (let j = 0; j < Math.min(8, earlyR.length); j++) {
+      for (let k = 0; k < Math.min(5, lateT.length); k++) {
+        for (let m = 0; m < Math.min(8, lateR.length); m++) {
+          const cand = transformFromAnchors(
+            { subtitleMs: earlyT[i].startMs, videoMs: earlyR[j].startMs },
+            { subtitleMs: lateT[k].startMs, videoMs: lateR[m].startMs }
+          );
+          if (cand.scale < 0.85 || cand.scale > 1.18) continue;
+          const score = scoreDialogueOverlap(sampleTarget, refBuckets, BUCKET_MS, maxBucketIdx, cand);
+          if (score > bestScore + 0.015) {
+            bestScore = score;
+            bestTransform = cand;
+            usedCorrelation = true;
+          }
+        }
+      }
+    }
+  }
+
+  // Fine local refinement (±1200ms in 100ms steps) around the winning transform
+  const centerOffset = bestTransform.offsetMs;
+  for (let delta = -1200; delta <= 1200; delta += 100) {
+    const candidate = { scale: bestTransform.scale, offsetMs: centerOffset + delta };
+    const score = scoreDialogueOverlap(sampleTarget, refBuckets, BUCKET_MS, maxBucketIdx, candidate);
+    if (score > bestScore) {
+      bestScore = score;
+      bestTransform = candidate;
+    }
+  }
+
+  const applied = applyLinearTransform(target, bestTransform);
+  return {
+    cues: applied.cues,
+    method: usedCorrelation ? 'cadence_correlation' : 'linear_anchor',
+    transform: bestTransform,
+    confidence: Math.min(1, Number(bestScore.toFixed(3))),
+    clampedCount: applied.clampedCount,
+  };
 }
 
 /**

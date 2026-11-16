@@ -56,6 +56,7 @@ import {
 } from '@/lib/storage/client-job-store';
 import { createContextualBatches } from '@/lib/translation/chunker';
 import { validateAndRepairTranslations } from '@/lib/translation/validator';
+import { parseSrtContent } from '@/lib/srt/parser';
 import { Navbar } from '@/components/Navbar';
 import { UploadedFileState, UploadZone } from '@/components/UploadZone';
 import { LanguageSelectors } from '@/components/LanguageSelectors';
@@ -923,7 +924,22 @@ export default function HomePage() {
         )}
 
         {/* VIEW 5: SUBTITLE SYNC & RELEASE CONVERTER */}
-        {activeView === 'sync' && <SubtitleSyncTool />}
+        {activeView === 'sync' && (
+          <SubtitleSyncTool
+            onSendToTranslator={({ fileName, content }) => {
+              const parsed = parseSrtContent(content, fileName);
+              if (parsed.isValid) {
+                setUploadedFile({
+                  fileName,
+                  fileSize: new Blob([content]).size,
+                  content,
+                  parseResult: parsed,
+                });
+                setActiveView('dashboard');
+              }
+            }}
+          />
+        )}
       </main>
 
       {/* Footer */}
