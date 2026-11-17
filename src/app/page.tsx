@@ -392,7 +392,8 @@ export default function HomePage() {
         const allEntriesAlreadyTranslated = batch.entrySequences.every((seq) => {
           const entry = entryMap.get(seq);
           return Boolean(
-            entry && entry.translatedText && entry.translatedText.trim().length > 0
+            entry &&
+              (entry.isOmitted || (entry.translatedText && entry.translatedText.trim().length > 0))
           );
         });
 
@@ -445,11 +446,17 @@ export default function HomePage() {
         }
 
         if (Array.isArray(batchData.translations)) {
-          for (const item of batchData.translations) {
+          for (const item of batchData.translations as Array<{
+            sequence: number;
+            translatedText: string;
+            aiTranslatedText?: string;
+            isOmitted?: boolean;
+          }>) {
             const targetEntry = entryMap.get(item.sequence);
-            if (targetEntry && item.translatedText) {
+            if (targetEntry && (item.isOmitted || item.translatedText)) {
               if (!targetEntry.isEditedByUser) {
-                targetEntry.translatedText = item.translatedText;
+                targetEntry.translatedText = item.isOmitted ? '' : item.translatedText;
+                targetEntry.isOmitted = item.isOmitted ? true : undefined;
               }
               targetEntry.aiTranslatedText =
                 item.aiTranslatedText || item.translatedText;
@@ -485,7 +492,9 @@ export default function HomePage() {
         batch.completedAt = new Date().toISOString();
 
         job.translatedCount = job.entries.filter(
-          (e) => e.translatedText && e.translatedText.trim().length > 0
+          (e) =>
+            Boolean(e.isOmitted) ||
+            Boolean(e.translatedText && e.translatedText.trim().length > 0)
         ).length;
         const completedBatchesCount = job.batches.filter(
           (b) => b.status === 'completed'

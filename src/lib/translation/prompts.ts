@@ -150,7 +150,7 @@ ${preferenceRules.join('\n')}
 
 CRITICAL SRT FORMATTING & INTEGRITY RULES:
 1. You must translate EVERY single subtitle entry requested in "TARGET SUBTITLE BATCH TO TRANSLATE".
-2. Never skip, merge, or reorder subtitle entries. Each sequence number must map 1-to-1 to its translated dialogue.
+2. Never skip, merge, or reorder subtitle entries. Each sequence number must map 1-to-1 to its translated dialogue (when a standalone Arabic-target cue contains ONLY a meaningless hesitation sound such as "Uh..." or "Mm." with zero spoken meaning, output exact "[OMIT]" so it stays hidden cleanly on export).
 3. Preserve inline formatting tags such as <i>...</i>, <b>...</b>, <u>...</u>, and music symbols ♪ where present.
 4. Preserve line breaks (\\n) for two-line subtitles when natural or when two speakers with "- " prefixes speak in the same entry.
 5. Never include timestamps or sequence numbers inside the "translatedText" string itself.

@@ -1,6 +1,10 @@
 import type { SubtitleEntry } from '@/types/subtitle';
 import { stripFormattingTags } from '@/lib/srt/parser';
-import { stripBidiControlChars } from './arabic-engine';
+import {
+  isOmittedSubtitleToken,
+  isStandaloneFillerCandidate,
+  stripBidiControlChars,
+} from './arabic-engine';
 
 export interface ProofreadChangeItem {
   sequence: number;
@@ -72,12 +76,19 @@ export function detectEntriesNeedingProofread(
   const reasonsBySequence: Record<number, string[]> = {};
 
   for (const entry of entries) {
-    if (entry.isSoundEffect) continue;
+    if (entry.isSoundEffect || entry.isOmitted) continue;
 
     const reasons: string[] = [];
     const rawTrans = stripBidiControlChars(entry.translatedText || '').trim();
     const cleanTrans = stripFormattingTags(rawTrans).trim();
     const cleanOrig = stripFormattingTags(entry.originalText || '').trim();
+
+    if (isOmittedSubtitleToken(rawTrans)) {
+      if (isStandaloneFillerCandidate(entry.originalText)) {
+        continue;
+      }
+      reasons.push('Invalid [OMIT] token on genuine spoken dialogue');
+    }
 
     if (!cleanTrans) {
       reasons.push('Empty translation');
@@ -100,12 +111,17 @@ export function detectEntriesNeedingProofread(
           );
         }
 
-        // 3. Check for duplicate consecutive Arabic words (e.g. "في في", "من من", "هذا هذا")
+        // 3. Check for Eastern Arabic-Indic or Persian digits instead of standard Western numerals (0-9)
+        if (/[\u0660-\u0669\u06F0-\u06F9]/.test(cleanTrans)) {
+          reasons.push('Uses Eastern/Persian digits instead of Western numerals (0-9)');
+        }
+
+        // 4. Check for duplicate consecutive Arabic words (e.g. "في في", "من من", "هذا هذا")
         if (/(?<![\p{L}\p{N}\p{M}_])([\u0600-\u06FF]{2,})\s+\1(?![\p{L}\p{N}\p{M}_])/u.test(cleanTrans)) {
           reasons.push('Duplicate consecutive word detected');
         }
 
-        // 4. Check for common spelling, defective-verb, or literal machine calque errors
+        // 5. Check for common spelling, defective-verb, jussive mood, or literal machine calque errors
         if (
           /(?:انشاء\s+الله|يأخذ مكان|يصنع معنى|قطعة من الكعكة|هل تقوم بممازحتي)|(?<![\p{L}\p{N}\p{M}_])(?:لاكن|هاذ[اه]|اللذ[ين]|اللتي|[يتن]محي)(?![\p{L}\p{N}\p{M}_])/u.test(
             cleanTrans
@@ -113,8 +129,30 @@ export function detectEntriesNeedingProofread(
         ) {
           reasons.push('Contains literal machine calque or common Arabic spelling mistake');
         }
+        if (
+          /(?:^|[\s،؛:("«])[وف]?لم(?![\p{L}\p{N}\p{M}_])\s+(?:تمضي|يمضي|أمضي|يأتي|تأتي|آتي|يمشي|تمشي|يرى|ترى|أرى|يبقى|تبقى|ينتهي|تنتهي|ينسى|تنسى|يعطي|تعطي|يدري|تدري|يبكي|تبكي|يجري|تجري|يشتري|يرمي|يحكي|تحكي)(?![\p{L}\p{N}\p{M}_])/u.test(
+            cleanTrans
+          )
+        ) {
+          reasons.push('Defective verb after jussive "لم" must drop weak vowel (e.g. "لم تمضِ")');
+        }
 
-        // 5. Check for archaic vocatives or high-signal literal idiom misses against source
+        // 6. Check for phonetic transliterations of English hesitation/filler sounds ("أوه", "أمم", "ممم-همم", "همم")
+        const hasSourceFiller = /\b(?:um+|uh+|er+|erm+|hmm+|mm+|mm-?hmm+|uh-?huh+|oh+)\b/i.test(
+          cleanOrig
+        );
+        const hasUnconditionalArabicFiller =
+          /(?<![\p{L}\p{N}\p{M}_])(?:أممم+|ممم+|مم+[\s\-–—]+هم+|م+هم+|هممم+)(?![\p{L}\p{N}\p{M}_])/u.test(
+            cleanTrans
+          );
+        const hasContextMatchedArabicFiller =
+          hasSourceFiller &&
+          /(?<![\p{L}\p{N}\p{M}_])(?:أوه|أمم|همم|مم)(?![\p{L}\p{N}\p{M}_])/u.test(cleanTrans);
+        if (hasUnconditionalArabicFiller || hasContextMatchedArabicFiller) {
+          reasons.push('Phonetic English filler transliteration ("أوه/أمم/مم") should be omitted or localized');
+        }
+
+        // 7. Check for archaic vocatives or high-signal literal idiom misses against source
         if (
           /\b(?:man|dude|bro|pal|buddy)\b/i.test(cleanOrig) &&
           /(?<![\p{L}\p{N}\p{M}_])يا\s+هذا(?![\p{L}\p{N}\p{M}_])/u.test(cleanTrans)
@@ -135,7 +173,7 @@ export function detectEntriesNeedingProofread(
           reasons.push('Missing repetition adverb ("again") in "never ... again" phrasing');
         }
 
-        // 6. Check for unbalanced brackets or collapsed multi-speaker dash dialogue turns
+        // 8. Check for unbalanced brackets or collapsed multi-speaker dash dialogue turns
         if (hasUnbalancedBrackets(cleanTrans)) {
           reasons.push('Unbalanced parentheses or square brackets detected');
         }

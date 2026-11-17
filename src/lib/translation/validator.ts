@@ -7,6 +7,7 @@ import type {
 import { formatSrtContent } from '@/lib/srt/formatter';
 import { extractFormattingTags, parseSrtContent, stripFormattingTags } from '@/lib/srt/parser';
 import {
+  isStandaloneFillerCandidate,
   normalizeArabicSubtitleText,
   preserveOuterFormattingTags,
 } from './arabic-engine';
@@ -138,9 +139,13 @@ export function validateAndRepairTranslations(
     }
 
     let text = (candidate.translatedText ?? '').trim();
+    const isValidOmittedFiller =
+      Boolean(candidate.isOmitted) && isStandaloneFillerCandidate(orig.originalText);
 
-    // Check #5: Empty translations
-    if (!text) {
+    // Check #5: Empty translations (allow intentionally omitted meaningless fillers like "Uh...", "Mm.")
+    if (isValidOmittedFiller) {
+      text = '';
+    } else if (!text) {
       emptyTranslationsCount++;
       entryWarnings.push('Empty translation');
       issues.push({
@@ -278,12 +283,14 @@ export function validateAndRepairTranslations(
     repairedEntries.push({
       ...orig,
       translatedText: text,
-      aiTranslatedText: candidate.aiTranslatedText || text,
+      aiTranslatedText: candidate.aiTranslatedText ?? text,
+      isOmitted: isValidOmittedFiller ? true : undefined,
       isEditedByUser: candidate.isEditedByUser || false,
       translationNotes: candidate.translationNotes,
       warnings: entryWarnings.length > 0 ? entryWarnings : undefined,
-      status:
-        entryWarnings.length > 0
+      status: isValidOmittedFiller
+        ? 'translated'
+        : entryWarnings.length > 0
           ? 'warning'
           : candidate.isEditedByUser
             ? 'edited'
@@ -295,19 +302,26 @@ export function validateAndRepairTranslations(
   const exportedSrt = formatSrtContent(repairedEntries, { fallbackToOriginal: false });
   const roundTripParsed = parseSrtContent(exportedSrt, 'validated.srt');
 
-  const countMatches = roundTripParsed.entries.length === originalEntries.length;
+  const expectedExportedEntries = repairedEntries.filter((e) => !e.isOmitted);
+  const hasOmittedEntries = expectedExportedEntries.length !== originalEntries.length;
+
+  const countMatches = roundTripParsed.entries.length === expectedExportedEntries.length;
   const sequenceIntegrityMatch =
     countMatches &&
-    repairedEntries.every((e, i) => e.sequence === originalEntries[i].sequence);
+    expectedExportedEntries.every((e, i) =>
+      hasOmittedEntries
+        ? roundTripParsed.entries[i].sequence === i + 1
+        : roundTripParsed.entries[i].sequence === e.sequence
+    );
   const timestampIntegrityMatch =
     countMatches &&
-    repairedEntries.every(
+    expectedExportedEntries.every(
       (e, i) =>
-        e.startTime === originalEntries[i].startTime &&
-        e.endTime === originalEntries[i].endTime
+        roundTripParsed.entries[i].startTime === e.startTime &&
+        roundTripParsed.entries[i].endTime === e.endTime
     );
   const isValidSrtStructure =
-    roundTripParsed.isValid &&
+    (expectedExportedEntries.length === 0 ? true : roundTripParsed.isValid) &&
     countMatches &&
     sequenceIntegrityMatch &&
     timestampIntegrityMatch;
@@ -351,7 +365,9 @@ export function validateAndRepairTranslations(
     isFullyValidated,
     originalEntryCount: originalEntries.length,
     translatedEntryCount: repairedEntries.filter(
-      (e) => e.translatedText && e.translatedText.trim().length > 0
+      (e) =>
+        Boolean(e.isOmitted) ||
+        Boolean(e.translatedText && e.translatedText.trim().length > 0)
     ).length,
     sequenceIntegrityMatch,
     timestampIntegrityMatch,

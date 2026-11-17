@@ -14,9 +14,13 @@ import {
   SUPPORTED_LANGUAGES,
 } from '@/lib/languages';
 import {
+  OMITTED_SUBTITLE_TOKEN,
   applyArabicRtlBidiFix,
   buildArabicLinguisticInstructions,
+  isStandaloneFillerCandidate,
+  normalizeArabicDigitsToWestern,
   normalizeArabicSubtitleText,
+  resolveTranslatedEntryResult,
   stripBidiControlChars,
 } from '@/lib/translation/arabic-engine';
 import { buildAnalysisSystemPrompt } from '@/lib/translation/context-analyzer';
@@ -1512,5 +1516,129 @@ It is all over now.
     assert.equal(cadenceAligned.method, 'cadence_correlation');
     assert.ok(Math.abs((cadenceAligned.transform?.offsetMs ?? 0) - 15_000) <= 200);
     assert.ok(Math.abs(cadenceAligned.cues[0].startMs - 75_000) <= 200);
+  });
+
+  it('Test 17: Western numerals only (0-9), jussive defective-verb QA, and Netflix-style filler omission on export', () => {
+    // 1. Eastern Arabic & Persian numerals always normalize to Western 0-9 while preserving formatting tags
+    assert.equal(normalizeArabicDigitsToWestern('في ديسمبر ١٩٧٨ و۱۹۷۹ قتلت ٣٩'), 'في ديسمبر 1978 و1979 قتلت 39');
+    const normalizedLine = normalizeArabicSubtitleText('<i>ديسمبر ١٩٧٨</i>', '<i>December 1978</i>');
+    assert.equal(stripBidiControlChars(normalizedLine), '<i>ديسمبر 1978</i>');
+
+    // 2. Standalone filler detection distinguishes empty hesitation cues from meaningful expressions
+    assert.equal(isStandaloneFillerCandidate('Mm.'), true);
+    assert.equal(isStandaloneFillerCandidate('Uh...'), true);
+    assert.equal(isStandaloneFillerCandidate('<i>Hmm.</i>'), true);
+    assert.equal(isStandaloneFillerCandidate('- Oh.\n- Hmm.'), true);
+    assert.equal(isStandaloneFillerCandidate('Uh-oh!'), false);
+    assert.equal(isStandaloneFillerCandidate('Oh, wait for me!'), false);
+    assert.equal(isStandaloneFillerCandidate('Hello there.'), false);
+
+    // 3. [OMIT] token succeeds strictly on standalone filler candidates and is rejected on real dialogue
+    const omittedRes = resolveTranslatedEntryResult(OMITTED_SUBTITLE_TOKEN, 'Mm.', 'ar');
+    assert.equal(omittedRes.isOmitted, true);
+    assert.equal(omittedRes.translatedText, '');
+    assert.equal(omittedRes.rejectedInvalidOmit, false);
+
+    const illegalOmitRes = resolveTranslatedEntryResult(OMITTED_SUBTITLE_TOKEN, 'Where did she go?', 'ar');
+    assert.equal(illegalOmitRes.isOmitted, false);
+    assert.equal(illegalOmitRes.rejectedInvalidOmit, true);
+
+    // 4. Validator & SRT formatter keep validation 100% clean while omitting meaningless filler cues and renumbering 1..N
+    const rawSrt = `1
+00:00:01,000 --> 00:00:03,000
+Wait a minute.
+
+2
+00:00:04,000 --> 00:00:05,000
+Uh...
+
+3
+00:00:06,000 --> 00:00:08,000
+December 1978.
+`;
+    const parsed = parseSrtContent(rawSrt, 'filler-omission.srt').entries;
+    const translated = parsed.map((e) => ({ ...e }));
+    translated[0].translatedText = 'انتظر دقيقة.';
+    translated[1].translatedText = '';
+    translated[1].aiTranslatedText = OMITTED_SUBTITLE_TOKEN;
+    translated[1].isOmitted = true;
+    translated[2].translatedText = 'ديسمبر ١٩٧٨.';
+
+    const qa = validateAndRepairTranslations({
+      originalEntries: parsed,
+      translatedEntries: translated,
+      glossary: [],
+      sourceLanguage: 'en',
+      targetLanguage: 'ar',
+    });
+
+    assert.equal(qa.report.isFullyValidated, true);
+    assert.equal(qa.report.emptyTranslationsCount, 0);
+    assert.equal(qa.report.translatedEntryCount, 3);
+    assert.equal(stripBidiControlChars(qa.repairedEntries[2].translatedText || ''), 'ديسمبر 1978.');
+
+    const exported = formatSrtContent(qa.repairedEntries, { fallbackToOriginal: false });
+    const reParsedExport = parseSrtContent(exported, 'exported.srt');
+    assert.equal(reParsedExport.totalEntries, 2);
+    assert.equal(reParsedExport.entries[0].sequence, 1);
+    assert.equal(reParsedExport.entries[1].sequence, 2);
+    assert.equal(reParsedExport.entries[1].startTime, '00:00:06,000');
+
+    // 5. Proofread heuristics flag Eastern digits, jussive "لم تمضي", and phonetic filler transliterations without false positives
+    const qaAudit = parseSrtContent(`1
+00:00:01,000 --> 00:00:02,000
+In December 1978.
+
+2
+00:00:03,000 --> 00:00:05,000
+Ten minutes had not passed.
+
+3
+00:00:06,000 --> 00:00:08,000
+Um, wait a second.
+
+4
+00:00:09,000 --> 00:00:11,000
+Mm-hmm.
+
+5
+00:00:12,000 --> 00:00:14,000
+She does not come here.
+
+6
+00:00:15,000 --> 00:00:17,000
+Nations and high ambitions.
+`).entries;
+
+    qaAudit[0].translatedText = 'في ديسمبر ١٩٧٨.';
+    qaAudit[1].translatedText = 'ولم تمضي عشر دقائق.';
+    qaAudit[2].translatedText = 'أمم، انتظر لحظة.';
+    qaAudit[3].translatedText = 'ممم-همم.';
+    qaAudit[4].translatedText = 'هي لا تأتي إلى هنا.';
+    qaAudit[5].translatedText = 'أمم الأرض وذوي همم عالية.';
+
+    const detected = detectEntriesNeedingProofread(qaAudit, 'ar');
+    assert.deepEqual(detected.sequences, [1, 2, 3, 4]);
+    assert.equal(detected.reasonsBySequence[5], undefined);
+    assert.equal(detected.reasonsBySequence[6], undefined);
+
+    // 6. Prompt builders enforce Western numerals, jussive verbs, and [OMIT]
+    const arabicInstructions = buildArabicLinguisticInstructions('msa', DEFAULT_PREFS);
+    const proofreadPrompt = buildProofreadBatchPrompts({
+      targetEntries: [qaAudit[0]],
+      allEntriesMap: new Map(qaAudit.map((e) => [e.sequence, e])),
+      reasonsBySequence: {},
+      sourceLanguage: 'en',
+      targetLanguage: 'ar',
+      arabicDialect: 'msa',
+      preferences: DEFAULT_PREFS,
+      glossary: [],
+    }).systemPrompt;
+
+    assert.ok(arabicInstructions.includes('0–9'));
+    assert.ok(arabicInstructions.includes('لم تمضِ'));
+    assert.ok(arabicInstructions.includes(OMITTED_SUBTITLE_TOKEN));
+    assert.ok(proofreadPrompt.includes('0–9'));
+    assert.ok(proofreadPrompt.includes(OMITTED_SUBTITLE_TOKEN));
   });
 });

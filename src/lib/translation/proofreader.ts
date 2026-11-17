@@ -12,9 +12,11 @@ import { resolveRequestAIAdapter } from '@/lib/ai/providers';
 import { getLanguageName } from '@/lib/languages';
 import { appendJobLog, getJob, saveJob } from '@/lib/storage/job-store';
 import {
+  OMITTED_SUBTITLE_TOKEN,
   buildArabicLinguisticInstructions,
-  normalizeArabicSubtitleText,
-  preserveOuterFormattingTags,
+  isOmittedSubtitleToken,
+  isStandaloneFillerCandidate,
+  resolveTranslatedEntryResult,
   stripBidiControlChars,
 } from './arabic-engine';
 import {
@@ -160,7 +162,10 @@ STRICT PROOFREADING & CORRECTION RULES:
 4. REPLACE LITERAL CALQUES, ARCHAIC DICTION & ORTHOGRAPHIC/MORPHOLOGICAL ERRORS:
    - Remove stiff archaic vocatives like "يا هذا" for casual "man/dude/bro" -> natural "يا رجل / يا صاح" or omit.
    - Fix literal calques ("I super promise" -> "أعدك حقاً"; "what the hell/fuck" -> "ما الذي يحدث بحق الجحيم؟"; "causing drama" -> "إثارة المشاكل"; "with this energy" -> "بهذا الأسلوب"; "يأخذ مكان" -> "يجري / تدور أحداثه"; "يصنع معنى" -> "هذا منطقي").
-   - Fix defective verb morphology ("تُمحي / يمحي" -> "تمحو / يمحو") and ensure faithful proper-noun transliteration (e.g., "Ole Miss" -> "أول ميس").
+   - Fix defective verb morphology and jussive mood ("تُمحي / يمحي" -> "تمحو / يمحو"; "لم تمضي" -> "لم تمضِ", "لم تأتي" -> "لم تأتِ", "لم يبقى" -> "لم يبقَ").
+   - Enforce Western numerals ONLY (0–9): convert any Eastern/Persian digits ("١٩٧٨" / "٠–٩") to Western digits ("1978" / "0–9").
+   - Eliminate phonetic English filler transliterations ("أوه"، "أمم"، "همم"، "مم"، "ممم-همم"): remove inline hesitation fillers ("أمم، انتظر" -> "انتظر"), translate meaningful reactions by intent ("Mm-hmm" -> "أجل", "Oh?" -> "حقاً؟"), OR return "[OMIT]" if the source cue is purely meaningless hesitation noise ("Um...", "Uh.", "Mm.", empty "Oh.").
+   - Ensure faithful proper-noun transliteration (e.g., "Ole Miss" -> "أول ميس").
    - Eliminate leftover English/foreign words (except valid HTML/SRT tags like <i>, </i>, <b>, </b>, <u>, </u>, {\\an8}).
    - Fix hamza errors (همزة القطع والوصل), taa marbuta vs haa, alif maqsura vs yaa, dual/plural agreement, and typos ("انشاء الله" -> "إن شاء الله").
 5. PRESERVE FORMATTING TAGS & STRUCTURE 100%:
@@ -217,6 +222,54 @@ Review all ${targetEntries.length} entries above against their surrounding dialo
   return { systemPrompt, userPrompt };
 }
 
+function evaluateProofreadCandidate(
+  entry: SubtitleEntry,
+  candidate: { revisedText: string; reason: string },
+  targetLanguage: string
+): {
+  revisedText: string;
+  isOmitted: boolean;
+  changed: boolean;
+  previousClean: string;
+  nextClean: string;
+} | null {
+  const isArabic = targetLanguage.toLowerCase() === 'ar';
+  const rawRevised = stripBidiControlChars(candidate.revisedText).trim();
+  if (!rawRevised) return null;
+
+  const allowOmit =
+    isOmittedSubtitleToken(rawRevised) &&
+    isStandaloneFillerCandidate(entry.originalText);
+
+  if (isArabic && !allowOmit && !/[\u0600-\u06FF]/.test(rawRevised)) {
+    return null;
+  }
+
+  const resolved = resolveTranslatedEntryResult(
+    rawRevised,
+    entry.originalText,
+    targetLanguage
+  );
+  if (resolved.rejectedInvalidOmit) return null;
+
+  const prevClean = stripBidiControlChars(entry.translatedText || '').trim();
+  const nextClean = resolved.isOmitted
+    ? OMITTED_SUBTITLE_TOKEN
+    : stripBidiControlChars(resolved.translatedText).trim();
+
+  const changed = resolved.isOmitted
+    ? !entry.isOmitted || prevClean.length > 0
+    : Boolean(nextClean && (nextClean !== prevClean || Boolean(entry.isOmitted)));
+
+  return {
+    revisedText: resolved.translatedText,
+    isOmitted: resolved.isOmitted,
+    changed,
+    previousClean: prevClean,
+    nextClean,
+  };
+}
+
 /**
  * Executes a non-destructive AI Proofreading & Linguistic Review pass on a job.
  * - Preserves `entry.aiTranslatedText` so the user can always revert any change.
@@ -270,16 +323,16 @@ export async function proofreadSubtitleJob(params: {
     if (detection.sequences.length > 0) {
       targetSequenceList = detection.sequences;
     } else {
-      // If smart scan found 0 obvious English leftovers/warnings, proofread all dialogue entries (up to 90 entries) so the user still gets a thorough grammatical & spelling review
+      // If smart scan found 0 obvious issues, proofread all dialogue entries (up to 90 entries) so the user still gets a thorough grammatical & spelling review
       effectiveScope = 'all';
       targetSequenceList = job.entries
-        .filter((e) => !e.isSoundEffect)
+        .filter((e) => !e.isSoundEffect && !e.isOmitted)
         .slice(0, 90)
         .map((e) => e.sequence);
     }
   } else {
     targetSequenceList = job.entries
-      .filter((e) => !e.isSoundEffect)
+      .filter((e) => !e.isSoundEffect && !e.isOmitted)
       .map((e) => e.sequence);
   }
 
@@ -343,41 +396,33 @@ export async function proofreadSubtitleJob(params: {
       const candidate = correctionsBySeq.get(entry.sequence);
       if (!candidate) continue;
 
-      const rawRevised = stripBidiControlChars(candidate.revisedText).trim();
-      if (!rawRevised) continue;
+      const evaluated = evaluateProofreadCandidate(
+        entry,
+        candidate,
+        job.targetLanguage
+      );
+      if (!evaluated) continue;
 
-      // Fail-safe guard: For Arabic target, never accept a revision that strips all Arabic characters
-      if (isArabic && !/[\u0600-\u06FF]/.test(rawRevised)) {
-        continue;
-      }
-
-      // Normalize punctuation, restore/balance formatting tags (<i>, <b>, {\an8}), and anchor RTL BiDi marks
-      const normalizedRevised = isArabic
-        ? normalizeArabicSubtitleText(rawRevised, entry.originalText)
-        : preserveOuterFormattingTags(rawRevised, entry.originalText);
-
-      const prevClean = stripBidiControlChars(entry.translatedText || '').trim();
-      const nextClean = stripBidiControlChars(normalizedRevised).trim();
-
-      if (nextClean && nextClean !== prevClean) {
+      if (evaluated.changed) {
         // Preserve previous translation in aiTranslatedText so user can always Undo/Restore
         if (!entry.aiTranslatedText) {
           entry.aiTranslatedText = entry.translatedText;
         }
-        entry.translatedText = normalizedRevised;
+        entry.translatedText = evaluated.revisedText;
+        entry.isOmitted = evaluated.isOmitted ? true : undefined;
         entry.status = 'repaired';
         entry.translationNotes = candidate.reason;
 
         changes.push({
           sequence: entry.sequence,
           originalText: entry.originalText,
-          previousTranslation: prevClean,
-          revisedTranslation: nextClean,
+          previousTranslation: evaluated.previousClean,
+          revisedTranslation: evaluated.nextClean,
           reason: candidate.reason,
         });
       } else if (entry.translatedText) {
-        // Ensure RTL BiDi fix and tag normalization are applied even if wording didn't change
-        entry.translatedText = normalizedRevised;
+        // Ensure RTL BiDi fix, Western digits, and tag normalization are applied even if wording didn't change
+        entry.translatedText = evaluated.revisedText;
       }
     }
   }
@@ -400,6 +445,7 @@ export async function proofreadSubtitleJob(params: {
     ? job.entries.filter(
         (e) =>
           !e.isSoundEffect &&
+          !e.isOmitted &&
           extractResidualLatinWords(e.translatedText || '').length > 0
       ).length
     : 0;
@@ -445,6 +491,7 @@ export async function proofreadSingleBatchStateless(params: {
   revisions: Array<{
     sequence: number;
     revisedText: string;
+    isOmitted?: boolean;
     reason: string;
     changed: boolean;
     previousClean: string;
@@ -464,7 +511,6 @@ export async function proofreadSingleBatchStateless(params: {
     aiAdapter,
   } = params;
 
-  const isArabic = targetLanguage.toLowerCase() === 'ar';
   const allEntriesMap = new Map<number, SubtitleEntry>();
   for (const e of contextEntries) {
     allEntriesMap.set(e.sequence, e);
@@ -514,6 +560,7 @@ export async function proofreadSingleBatchStateless(params: {
   const revisions: Array<{
     sequence: number;
     revisedText: string;
+    isOmitted?: boolean;
     reason: string;
     changed: boolean;
     previousClean: string;
@@ -524,28 +571,22 @@ export async function proofreadSingleBatchStateless(params: {
     const candidate = correctionsBySeq.get(entry.sequence);
     if (!candidate) continue;
 
-    const rawRevised = stripBidiControlChars(candidate.revisedText).trim();
-    if (!rawRevised) continue;
+    const evaluated = evaluateProofreadCandidate(
+      entry,
+      candidate,
+      targetLanguage
+    );
+    if (!evaluated) continue;
 
-    if (isArabic && !/[\u0600-\u06FF]/.test(rawRevised)) {
-      continue;
-    }
-
-    const normalizedRevised = isArabic
-      ? normalizeArabicSubtitleText(rawRevised, entry.originalText)
-      : preserveOuterFormattingTags(rawRevised, entry.originalText);
-
-    const prevClean = stripBidiControlChars(entry.translatedText || '').trim();
-    const nextClean = stripBidiControlChars(normalizedRevised).trim();
-
-    if (nextClean) {
+    if (evaluated.nextClean) {
       revisions.push({
         sequence: entry.sequence,
-        revisedText: normalizedRevised,
+        revisedText: evaluated.revisedText,
+        ...(evaluated.isOmitted ? { isOmitted: true } : {}),
         reason: candidate.reason,
-        changed: nextClean !== prevClean,
-        previousClean: prevClean,
-        nextClean,
+        changed: evaluated.changed,
+        previousClean: evaluated.previousClean,
+        nextClean: evaluated.nextClean,
       });
     }
   }

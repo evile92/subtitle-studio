@@ -20,8 +20,9 @@ import {
   buildSingleEntryRegeneratePrompts,
 } from './prompts';
 import {
-  normalizeArabicSubtitleText,
-  preserveOuterFormattingTags,
+  isOmittedSubtitleToken,
+  isStandaloneFillerCandidate,
+  resolveTranslatedEntryResult,
 } from './arabic-engine';
 import { validateAndRepairTranslations } from './validator';
 
@@ -266,11 +267,11 @@ export async function executeTranslationPipeline(
       entryMap.set(e.sequence, e);
     }
 
-    const isArabic = job.targetLanguage.toLowerCase() === 'ar';
     const effectiveSourceLang =
       job.sourceLanguage === 'auto'
         ? job.detectedSourceLanguage || 'en'
         : job.sourceLanguage;
+    const batchEntryLookup = entryMap;
 
     for (let bIdx = 0; bIdx < job.batches.length; bIdx++) {
       const batch = job.batches[bIdx];
@@ -279,7 +280,10 @@ export async function executeTranslationPipeline(
       // Skip already completed batches when resuming a job!
       const allEntriesAlreadyTranslated = batch.entrySequences.every((seq) => {
         const entry = entryMap.get(seq);
-        return entry && entry.translatedText && entry.translatedText.trim().length > 0;
+        return Boolean(
+          entry &&
+            (entry.isOmitted || (entry.translatedText && entry.translatedText.trim().length > 0))
+        );
       });
 
       if (batch.status === 'completed' && allEntriesAlreadyTranslated) {
@@ -321,11 +325,19 @@ export async function executeTranslationPipeline(
         BatchTranslationResponseSchema
       );
 
-      // Map returned translations to sequence numbers
+      // Map returned translations to sequence numbers (rejecting invalid [OMIT] on real dialogue)
       const returnedMap = new Map<number, string>();
       for (const item of batchResult.translations) {
         if (item.translatedText && item.translatedText.trim().length > 0) {
-          returnedMap.set(item.sequence, item.translatedText.trim());
+          const textVal = item.translatedText.trim();
+          const origEntry = batchEntryLookup.get(item.sequence);
+          if (
+            isOmittedSubtitleToken(textVal) &&
+            (!origEntry || !isStandaloneFillerCandidate(origEntry.originalText))
+          ) {
+            continue;
+          }
+          returnedMap.set(item.sequence, textVal);
         }
       }
 
@@ -374,15 +386,19 @@ export async function executeTranslationPipeline(
       for (const entry of batchEntries) {
         const rawTranslated = returnedMap.get(entry.sequence);
         if (rawTranslated) {
-          const normalized = isArabic
-            ? normalizeArabicSubtitleText(rawTranslated, entry.originalText)
-            : preserveOuterFormattingTags(rawTranslated, entry.originalText);
+          const resolved = resolveTranslatedEntryResult(
+            rawTranslated,
+            entry.originalText,
+            job.targetLanguage
+          );
+          if (resolved.rejectedInvalidOmit) continue;
 
           // Do not overwrite user manual edits if resuming
           if (!entry.isEditedByUser) {
-            entry.translatedText = normalized;
+            entry.translatedText = resolved.translatedText;
+            entry.isOmitted = resolved.isOmitted ? true : undefined;
           }
-          entry.aiTranslatedText = normalized;
+          entry.aiTranslatedText = resolved.aiTranslatedText;
           entry.status = entry.isEditedByUser ? 'edited' : 'translated';
         }
       }
@@ -414,7 +430,7 @@ export async function executeTranslationPipeline(
 
       // Update counters & progress (Batch stage spans 28% -> 86%)
       job.translatedCount = job.entries.filter(
-        (e) => e.translatedText && e.translatedText.trim().length > 0
+        (e) => Boolean(e.isOmitted) || Boolean(e.translatedText && e.translatedText.trim().length > 0)
       ).length;
       const completedBatchesCount = job.batches.filter(
         (b) => b.status === 'completed'
@@ -542,6 +558,7 @@ export async function translateSingleBatchStateless(params: {
     sequence: number;
     translatedText: string;
     aiTranslatedText: string;
+    isOmitted?: boolean;
   }>;
   newGlossaryTerms: Array<{
     sourceTerm: string;
@@ -563,7 +580,7 @@ export async function translateSingleBatchStateless(params: {
     aiAdapter,
   } = params;
 
-  const isArabic = targetLanguage.toLowerCase() === 'ar';
+  const entryBySeq = new Map(batchEntries.map((e) => [e.sequence, e]));
 
   const prompts = buildBatchTranslationPrompts({
     batchEntries,
@@ -589,7 +606,15 @@ export async function translateSingleBatchStateless(params: {
   const returnedMap = new Map<number, string>();
   for (const item of batchResult.translations) {
     if (item.translatedText && item.translatedText.trim().length > 0) {
-      returnedMap.set(item.sequence, item.translatedText.trim());
+      const textVal = item.translatedText.trim();
+      const origEntry = entryBySeq.get(item.sequence);
+      if (
+        isOmittedSubtitleToken(textVal) &&
+        (!origEntry || !isStandaloneFillerCandidate(origEntry.originalText))
+      ) {
+        continue;
+      }
+      returnedMap.set(item.sequence, textVal);
     }
   }
 
@@ -630,19 +655,24 @@ export async function translateSingleBatchStateless(params: {
     sequence: number;
     translatedText: string;
     aiTranslatedText: string;
+    isOmitted?: boolean;
   }> = [];
 
   for (const entry of batchEntries) {
     const rawTranslated = returnedMap.get(entry.sequence);
     if (rawTranslated) {
-      const normalized = isArabic
-        ? normalizeArabicSubtitleText(rawTranslated, entry.originalText)
-        : preserveOuterFormattingTags(rawTranslated, entry.originalText);
+      const resolved = resolveTranslatedEntryResult(
+        rawTranslated,
+        entry.originalText,
+        targetLanguage
+      );
+      if (resolved.rejectedInvalidOmit) continue;
 
       translations.push({
         sequence: entry.sequence,
-        translatedText: normalized,
-        aiTranslatedText: normalized,
+        translatedText: resolved.translatedText,
+        aiTranslatedText: resolved.aiTranslatedText,
+        ...(resolved.isOmitted ? { isOmitted: true } : {}),
       });
     }
   }
@@ -721,18 +751,22 @@ export async function regenerateSingleSubtitleEntry(params: {
     SingleEntryRegenerateSchema
   );
 
-  const isArabic = job.targetLanguage.toLowerCase() === 'ar';
-  const normalizedText = isArabic
-    ? normalizeArabicSubtitleText(data.translatedText, targetEntry.originalText)
-    : preserveOuterFormattingTags(data.translatedText, targetEntry.originalText);
+  const resolved = resolveTranslatedEntryResult(
+    data.translatedText,
+    targetEntry.originalText,
+    job.targetLanguage
+  );
 
   const baselineEntries = job.entries.map((entry) => ({ ...entry }));
 
-  targetEntry.translatedText = normalizedText;
-  targetEntry.aiTranslatedText = normalizedText;
-  targetEntry.isEditedByUser = false;
-  targetEntry.translationNotes = data.reasoning;
-  targetEntry.status = 'translated';
+  if (!resolved.rejectedInvalidOmit) {
+    targetEntry.translatedText = resolved.translatedText;
+    targetEntry.aiTranslatedText = resolved.aiTranslatedText;
+    targetEntry.isOmitted = resolved.isOmitted ? true : undefined;
+    targetEntry.isEditedByUser = false;
+    targetEntry.translationNotes = data.reasoning;
+    targetEntry.status = 'translated';
+  }
 
   // Re-run QA validation so the job's validation report stays up-to-date
   const qaResult = validateAndRepairTranslations({

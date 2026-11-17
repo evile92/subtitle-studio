@@ -32,6 +32,10 @@ import {
   isRtlLanguage,
 } from '@/lib/languages';
 import {
+  isOmittedSubtitleToken,
+  isStandaloneFillerCandidate,
+} from '@/lib/translation/arabic-engine';
+import {
   detectEntriesNeedingProofread,
   extractResidualLatinWords,
   type ProofreadChangeItem,
@@ -127,6 +131,7 @@ export function SubtitleWorkspace({
     () =>
       job.entries.filter(
         (e) =>
+          !e.isOmitted &&
           !(draftEdits[e.sequence] ?? e.translatedText ?? '').trim()
       ).length,
     [job.entries, draftEdits]
@@ -149,7 +154,7 @@ export function SubtitleWorkspace({
           return false;
         }
       } else if (filterMode === 'untranslated') {
-        if (currentTrans.trim().length > 0) return false;
+        if (entry.isOmitted || currentTrans.trim().length > 0) return false;
       }
 
       if (!q) return true;
@@ -240,16 +245,31 @@ export function SubtitleWorkspace({
         const upd = updatesBySeq.get(entry.sequence);
         if (!upd) return { ...entry };
         if (upd.restoreAi && entry.aiTranslatedText) {
+          if (
+            isOmittedSubtitleToken(entry.aiTranslatedText) &&
+            isStandaloneFillerCandidate(entry.originalText)
+          ) {
+            return {
+              ...entry,
+              translatedText: '',
+              isOmitted: true,
+              isEditedByUser: false,
+              status: 'translated' as const,
+            };
+          }
           return {
             ...entry,
             translatedText: entry.aiTranslatedText,
+            isOmitted: false,
             isEditedByUser: false,
             status: 'translated' as const,
           };
         }
+        const nextVal = String(upd.translatedText ?? '');
         return {
           ...entry,
-          translatedText: String(upd.translatedText ?? ''),
+          translatedText: nextVal,
+          isOmitted: nextVal.trim().length === 0 && Boolean(entry.isOmitted),
           isEditedByUser: upd.isEditedByUser ?? true,
           status: 'edited' as const,
         };
@@ -530,12 +550,12 @@ export function SubtitleWorkspace({
         } else {
           effectiveScope = 'all';
           targetSequenceList = workingEntries
-            .filter((e) => !e.isSoundEffect)
+            .filter((e) => !e.isSoundEffect && !e.isOmitted)
             .map((e) => e.sequence);
         }
       } else {
         targetSequenceList = workingEntries
-          .filter((e) => !e.isSoundEffect)
+          .filter((e) => !e.isSoundEffect && !e.isOmitted)
           .map((e) => e.sequence);
       }
 
@@ -594,6 +614,7 @@ export function SubtitleWorkspace({
           revisions?: Array<{
             sequence: number;
             revisedText: string;
+            isOmitted?: boolean;
             reason: string;
             changed: boolean;
             previousClean: string;
@@ -634,6 +655,7 @@ export function SubtitleWorkspace({
                 targetEntry.aiTranslatedText = targetEntry.translatedText;
               }
               targetEntry.translatedText = rev.revisedText;
+              targetEntry.isOmitted = rev.isOmitted ? true : undefined;
               targetEntry.status = 'repaired';
               targetEntry.translationNotes = rev.reason;
 
@@ -687,6 +709,7 @@ export function SubtitleWorkspace({
         ? workingEntries.filter(
             (e) =>
               !e.isSoundEffect &&
+              !e.isOmitted &&
               extractResidualLatinWords(e.translatedText || '').length > 0
           ).length
         : 0;
@@ -1403,6 +1426,13 @@ export function SubtitleWorkspace({
                               {t.workspace.entryActions.editedBadge}
                             </span>
                           )}
+                          {entry.isOmitted && !currentText.trim() && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                              {uiLang === 'ar'
+                                ? 'مخفي عند التصدير (صوت تردد)'
+                                : 'Hidden on export (filler sound)'}
+                            </span>
+                          )}
                           {hasWarning && (
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 flex items-center gap-1">
                               <AlertTriangle className="w-3 h-3" />
@@ -1422,6 +1452,13 @@ export function SubtitleWorkspace({
                         dir={isTargetRtl ? 'rtl' : 'ltr'}
                         rows={Math.max(2, currentText.split('\n').length)}
                         value={currentText}
+                        placeholder={
+                          entry.isOmitted
+                            ? uiLang === 'ar'
+                              ? 'صوت تردد زائد (مثل Uh/Mm) — مخفي تلقائياً مثل نتفلكس، اكتب هنا إذا أردت إظهاره'
+                              : 'Meaningless hesitation filler — hidden cleanly on export (type here to restore)'
+                            : undefined
+                        }
                         onChange={(e) =>
                           handleTextChange(entry.sequence, e.target.value)
                         }

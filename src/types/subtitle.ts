@@ -42,6 +42,7 @@ export interface SubtitleEntry {
   speakerLabel?: string;   // Extracted speaker label if present (e.g. "JOHN:", "- SARAH:")
   formattingTags: string[];// Extracted tags like ["<i>", "</i>"]
   isSoundEffect: boolean;  // True if entry is "[music]", "(sighs)", "♪ ... ♪", etc.
+  isOmitted?: boolean;     // True if cue was a meaningless standalone filler (e.g. "Uh...", "Mm.") omitted on export (Netflix-style)
   // Translation state
   translatedText?: string;       // Current active translation (either AI or user-edited)
   aiTranslatedText?: string;     // Original AI-generated translation (kept so user can restore)

@@ -8,11 +8,55 @@ import { getArabicDialectOption } from '@/lib/languages';
 
 const RLM = '\u200F'; // Unicode Right-to-Left Mark (U+200F)
 
+export const OMITTED_SUBTITLE_TOKEN = '[OMIT]';
+
+const PURE_FILLER_TOKEN_REGEX =
+  /^(?:u+m+|u+h+|e+r+m*|m{2,}|h+m+|m+h+m+|m+-?h+m+|u+h+-?h+u+h+|u+h+-?u+h+|o+h+|a+h+|e+h+|h+u+h+)$/i;
+
 /**
  * Strips invisible Unicode BiDi control characters for clean text inspection or idempotent re-application.
  */
 export function stripBidiControlChars(text: string): string {
   return text.replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '');
+}
+
+/**
+ * Checks whether an AI translation output uses the intentional omission marker `[OMIT]`.
+ */
+export function isOmittedSubtitleToken(text?: string): boolean {
+  if (!text) return false;
+  return /^\s*(?:\[\s*(?:OMIT|SKIP)\s*\]|__(?:OMIT|SKIP)__)\s*$/i.test(text);
+}
+
+/**
+ * Returns true strictly when an original cue consists ONLY of non-lexical English hesitation/filler sounds
+ * (e.g. "Uh...", "Mm.", "Hmm...", "Oh.") with no dialogue words. Excludes expressions like "Uh-oh".
+ */
+export function isStandaloneFillerCandidate(originalText: string): boolean {
+  const plain = originalText
+    .replace(/<\/?[a-zA-Z][^>]*>/g, '')
+    .replace(/\{\\[^}]+\}/g, '')
+    .replace(/(?:^|\n)\s*[-–—]\s*/g, ' ')
+    .replace(/[.,!?؟…"'»«()[\]♪♫:;]+/g, ' ')
+    .trim();
+
+  if (!plain) return false;
+  const tokens = plain
+    .split(/\s+/)
+    .map((t) => t.replace(/^[-–—]+|[-–—]+$/g, ''))
+    .filter(Boolean);
+  if (tokens.length === 0 || tokens.length > 4) return false;
+  return tokens.every((tok) => PURE_FILLER_TOKEN_REGEX.test(tok));
+}
+
+/**
+ * Converts Eastern Arabic-Indic (٠–٩) and Persian (۰–۹) digits to standard Western numerals (0–9).
+ */
+export function normalizeArabicDigitsToWestern(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(/[\u0660-\u0669]/g, (ch) => String(ch.charCodeAt(0) - 0x0660))
+    .replace(/[\u06F0-\u06F9]/g, (ch) => String(ch.charCodeAt(0) - 0x06F0));
 }
 
 /**
@@ -127,6 +171,10 @@ ${dialectOption.promptGuidelines}
   * NATURAL & COLLOQUIAL EQUIVALENTS: Replace idiomatic and figurative expressions with authentic Arabic equivalents (e.g., "Heaven knows" -> "يعلم الله", NEVER "السماء تعلم"; "With one accord" -> "بصوت واحد / بقلب واحد", NEVER "بكلمة واحدة متفقة"; "Break it all down" in explanation -> "لأشرح الأمر وأفصّله", NOT literal "لأهدم كل شيء"; "Put you in the fast lane" -> "سأضعك في المسار السريع", NOT fabricated "طريق النجاح السريع").
   * ANTI-OVERCOMPLICATION & NATURAL REGISTER: Keep simple everyday speech crisp and spoken-natural. Match casual slang, banter, warmth, or grit to how real speakers talk rather than stiff textbook wording.
   * CASUAL VOCATIVES & ANTI-ARCHAIC DICTION: Translate informal vocatives like "man", "dude", "bro", "pal" naturally ("يا رجل"، "يا صاح") or omit when cleaner. NEVER use archaic or stilted phrases like "يا هذا" in modern dialogue.
+  * ZERO ENGLISH HESITATION TRANSLITERATIONS (منع تعريب أصوات التردد):
+    - NEVER phonetically transliterate English hesitation/filler sounds (um, uh, er, erm, mm, hmm, mm-hmm, uh-huh, oh) into Arabic letters ("أمم"، "أممم"، "مم"، "ممم"، "ممم-همم"، "همم"، "أوه").
+    - Inside dialogue sentences: delete empty hesitation sounds ("Um, wait" -> "انتظر"، NOT "أمم، انتظر"), and translate meaningful reactions by intent ("Mm-hmm, yes" -> "أجل، نعم"; "Oh, I see" -> "فهمت").
+    - Standalone filler-only cues (Netflix standard): if an entire cue contains ONLY meaningless noise/hesitation ("Um...", "Uh.", "Mm.", "Hmm...", or empty "Oh."), output exact "${OMITTED_SUBTITLE_TOKEN}" so it stays cleanly omitted on export; if it carries clear communicative meaning, translate the meaning concisely ("Mm-hmm." -> "أجل." / "Oh!" -> "حقاً؟" / "يا إلهي!").
   * ADULT HUMOR, DOUBLE-ENTENDRES & HONEST SUBTEXT: Preserve playful innuendo, sensual imagery, sarcasm, and earthy slang according to the profanity rule below rather than sanitizing them into vague or misleading euphemisms that flatten or contradict the scene.
   * LEXICAL DISAMBIGUATION IN CONTEXT:
     - Distinguish awkwardness/embarrassment ("cringey" -> "محرج") from disgust ("gross" -> "مقزز").
@@ -152,9 +200,12 @@ ${dialectOption.promptGuidelines}
   * Avoid stiff filler ("تم + المصدر", "من قِبل", redundant pronouns like "أنا أعتقد أنني سوف...").
 
 7. GRAMMATICAL & MORPHOLOGICAL PRECISION:
-- Defective Verbs (الأفعال الناقصة المعتلة الآخر): Conjugate hollow and defective roots with exact classical morphology — e.g., "تمحو / يمحو" (from م-ح-و, NEVER erroneous "تمحي / يمحي"), "يدعو / يرجو / يشكو".
+- Defective Verbs & Jussive Mood (الأفعال المعتلة والجزم بعد لم):
+  * Preserve exact roots ("تمحو / يمحو" from م-ح-و, NEVER "تمحي / يمحي"; "يدعو / يرجو / يشكو").
+  * After jussive particles (لم / ولم / ما لم), ALWAYS drop the trailing weak vowel ("لم تمضِ" NEVER "لم تمضي", "لم تأتِ" NEVER "لم تأتي", "لم يبقَ" NEVER "لم يبقى", "لم ينتهِ" NEVER "لم ينتهي", "لم ينسَ" NEVER "لم ينسى").
 - Gender & Number Agreement: Conjugate verbs, adjectives, and dual pronouns (المثنى: كلاكما، أنتما) strictly according to context.
-- Natural Arabic Punctuation & Orthography: Use Arabic comma (،), question mark (؟), semicolon (؛), accurate hamza (همزة القطع والوصل), and clean taa marbuta vs haa. Limit diacritics to light disambiguating tanwin fatha (مثل: حقاً، طبعاً، أبداً، مجدداً).
+- Western Numerals Only (الأرقام الغربية 0–9 حصراً): Write ALL numbers, years, ages, counts, and times using standard Western digits 0–9 (e.g., "1978", "39", "24"), NEVER Eastern Arabic-Indic numerals ("١٩٧٨" / "٠–٩").
+- Natural Arabic Punctuation & Orthography: Use Arabic comma (،), question mark (؟), semicolon (؛), accurate hamza (همزة القطع والوصل), and clean taa marbuta vs haa. Limit diacritics to light disambiguating tanwin fatha or disambiguating kasra on jussive verbs (مثل: حقاً، طبعاً، أبداً، مجدداً، لم تمضِ).
 
 8. CHARACTER GENDER & VOICE MAP:
 ${characterGenderGuide}
@@ -194,6 +245,9 @@ export function normalizeArabicSubtitleText(
     protectedTags.push(match);
     return `__TAG_PLACEHOLDER_${protectedTags.length - 1}__`;
   });
+
+  // Restore ASCII Western numerals (0-9) by replacing Eastern Arabic-Indic / Persian digits
+  text = normalizeArabicDigitsToWestern(text);
 
   // Replace ASCII question mark `?` following Arabic characters with Arabic question mark `؟`
   text = text.replace(/([\u0600-\u06FF\s])\?/g, '$1؟');
@@ -270,4 +324,63 @@ export function preserveOuterFormattingTags(
   }
 
   return result;
+}
+
+export interface ResolvedTranslatedEntry {
+  translatedText: string;
+  aiTranslatedText: string;
+  isOmitted: boolean;
+  rejectedInvalidOmit: boolean;
+}
+
+/**
+ * Resolves a raw AI translation or proofreading string for one subtitle entry:
+ * - Converts `[OMIT]` on a meaningless standalone filler cue (e.g. "Uh...", "Mm.") into `{ isOmitted: true, translatedText: '' }`.
+ * - Rejects `[OMIT]` on genuine spoken dialogue so real lines are never dropped.
+ * - Normalizes Arabic digits (Western 0-9), punctuation, formatting tags, and RTL BiDi marks.
+ */
+export function resolveTranslatedEntryResult(
+  rawTranslated: string,
+  originalText: string,
+  targetLanguage: string
+): ResolvedTranslatedEntry {
+  const isArabic = targetLanguage.toLowerCase() === 'ar';
+  const trimmed = stripBidiControlChars(rawTranslated || '').trim();
+
+  if (isOmittedSubtitleToken(trimmed)) {
+    if (isArabic && isStandaloneFillerCandidate(originalText)) {
+      return {
+        translatedText: '',
+        aiTranslatedText: OMITTED_SUBTITLE_TOKEN,
+        isOmitted: true,
+        rejectedInvalidOmit: false,
+      };
+    }
+    return {
+      translatedText: '',
+      aiTranslatedText: '',
+      isOmitted: false,
+      rejectedInvalidOmit: true,
+    };
+  }
+
+  if (!trimmed) {
+    return {
+      translatedText: '',
+      aiTranslatedText: '',
+      isOmitted: false,
+      rejectedInvalidOmit: false,
+    };
+  }
+
+  const normalized = isArabic
+    ? normalizeArabicSubtitleText(trimmed, originalText)
+    : preserveOuterFormattingTags(trimmed, originalText);
+
+  return {
+    translatedText: normalized,
+    aiTranslatedText: normalized,
+    isOmitted: false,
+    rejectedInvalidOmit: false,
+  };
 }

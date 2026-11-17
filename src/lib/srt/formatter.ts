@@ -7,11 +7,13 @@ export interface FormatSrtOptions {
   lineEnding?: '\n' | '\r\n';       // Standard LF or Windows CRLF
   fallbackToOriginal?: boolean;     // If an entry has no translation yet, fallback to originalText
   fixArabicRtlBidi?: boolean;       // Anchor Arabic lines with Unicode RLM (\u200F) for video players (default: true)
+  omitHiddenEntries?: boolean;      // Skip entries marked isOmitted (meaningless standalone fillers) and renumber 1..N (default: true)
 }
 
 /**
  * Generates a structurally valid SubRip (.srt) string from SubtitleEntry[].
- * Strictly preserves sequence numbers, exact original start/end timestamps, and entry order.
+ * Preserves sequence numbers, exact original start/end timestamps, and entry order
+ * (skipping entries explicitly marked `isOmitted` and renumbering 1..N cleanly when omitted).
  * Automatically anchors Arabic lines with Unicode Right-to-Left Marks (\u200F) so punctuation
  * (..., ., !, ؟, -) displays on the correct RTL side in MPC-HC, VLC, PotPlayer, and TVs.
  */
@@ -25,16 +27,22 @@ export function formatSrtContent(
     lineEnding = '\n',
     fallbackToOriginal = true,
     fixArabicRtlBidi = true,
+    omitHiddenEntries = true,
   } = options;
 
-  const blocks = entries.map((entry) => {
-    const seqLine = String(entry.sequence);
+  const visibleEntries = omitHiddenEntries
+    ? entries.filter((entry) => !entry.isOmitted)
+    : entries;
+  const renumberSequentially = visibleEntries.length !== entries.length;
+
+  const blocks = visibleEntries.map((entry, idx) => {
+    const seqLine = renumberSequentially ? String(idx + 1) : String(entry.sequence);
     const timeLine = `${entry.startTime} --> ${entry.endTime}`;
 
     let translated =
       entry.translatedText !== undefined && entry.translatedText.trim() !== ''
         ? entry.translatedText.trim()
-        : fallbackToOriginal
+        : fallbackToOriginal && !entry.isOmitted
           ? entry.originalText
           : '';
 
